@@ -39,4 +39,6 @@ _TODO: where to get the demo data._
 
 ## License
 
-[MIT](LICENSE)
+Copyright (C) 2026 Nikita Senkin and Daniil Dobelis
+
+Licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). We use [Ultralytics YOLO](https://github.com/ultralytics/ultralytics), which is AGPL-3.0, so the project uses the same licence. If you run a modified version as a network service, you must offer its source code to the users of that service.

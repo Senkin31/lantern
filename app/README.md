@@ -64,6 +64,7 @@ Everything lives in [engine.py](engine.py).
 - **Statuses.** `watch → open → done_reported → verified`, plus `reopened` when the camera still sees snow ≥ 1 h after "done" or the inspector disputes it. Every change is written to `status_history` with who and when.
 - **KPIs.** Response time = `verified_at − opened_at`. Notification delay = `notified_at − detected_at`, with a KPI of 15 min. `/stats/response` reports both by contractor and by district.
 - **Time compression.** All durations are in "rule hours". `HOUR_SECONDS` (or `CLEARING_SECONDS` printed by the replay script) compresses them for the demo.
+- **Cameras.** `config/cameras.json` (vision side) is read first; `mock/cameras_mock.json` adds the demo cameras it does not define, so the mock demo keeps working once the Finnish cameras land. `source: skyfinder` cameras are never shown.
 - **Privacy.** The contractor and export responses are filtered on the server: no `frame_url`, no device ids and no low-confidence frames.
 - **Analysis.** `/analyze` gets a 10 s timeout; on timeout or error the report goes to `review`. While `ANALYZE_URL` is empty, a stub answers `accept`, so the irrelevant-photo report is accepted until the model is connected. `reject` reports are stored but never become alerts, and the inspector can still rescue one from the Reports tab.
 

@@ -38,13 +38,16 @@ def polygon_center(polygon) -> tuple:
 
 class Registry:
     def __init__(self, cameras_file: Path, cameras_fallback: Path, contractors_file: Path):
-        self.cameras_path = cameras_file if cameras_file.is_file() else cameras_fallback
+        # config/cameras.json (vision side) wins; the mock file adds the demo cameras it doesn't have
+        self.camera_files = [p for p in (cameras_file, cameras_fallback) if p.is_file()]
         self.cameras: dict = {}
         self.zones: dict = {}
-        if self.cameras_path.is_file():
-            data = json.loads(self.cameras_path.read_text(encoding="utf-8"))
+        for path in self.camera_files:
+            data = json.loads(path.read_text(encoding="utf-8"))
             for cam in data.get("cameras", []):
                 if cam.get("source") == "skyfinder":  # training-only cameras, never on the map
+                    continue
+                if cam["camera_id"] in self.cameras:
                     continue
                 self.cameras[cam["camera_id"]] = cam
                 for z in cam.get("zones", []):

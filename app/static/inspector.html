@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lantern Inspector</title>
+  <meta name="description" content="Lantern: winter sidewalk alerts for the city inspector.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M9 9h14l-2 16H11z' fill='%23f2a93b'/%3E%3Crect x='12' y='2' width='8' height='5' rx='1.5' fill='%2314213d'/%3E%3Crect x='8' y='26' width='16' height='4' rx='1.5' fill='%2314213d'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/assets/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="fill">
+  <header class="topbar" id="top"></header>
+  <div class="demo-bar" id="demo" aria-label="Demo controls"></div>
+  <main class="workspace">
+    <div id="map" role="region" aria-label="Map"></div>
+    <aside class="side">
+      <nav class="tabs" role="tablist" id="tabs"></nav>
+      <div class="panel" id="panel" aria-live="polite"></div>
+    </aside>
+  </main>
+  <footer class="footer" id="foot"></footer>
+  <script src="/assets/vendor/leaflet/leaflet.js"></script>
+  <script src="/assets/js/common.js"></script>
+  <script src="/assets/js/inspector.js"></script>
+</body>
+</html>

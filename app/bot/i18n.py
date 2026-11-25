@@ -1,0 +1,198 @@
+"""Bot texts in Latvian, English and Russian."""
+
+LANGS = ("lv", "en", "ru")
+LANG_NAMES = {"lv": "🇱🇻 Latviešu", "en": "🇬🇧 English", "ru": "🇷🇺 Русский"}
+
+T = {
+    "choose_lang": {
+        "lv": "Izvēlies valodu / Choose a language / Выберите язык",
+        "en": "Izvēlies valodu / Choose a language / Выберите язык",
+        "ru": "Izvēlies valodu / Choose a language / Выберите язык",
+    },
+    "welcome": {
+        "lv": "🏮 Lantern — ziņo par neiztīrītām ietvēm Rīgā.\n\n"
+              "Nosūti foto, atrašanās vietu un pasaki, vai var paiet garām. Mākslīgais intelekts pārbauda foto, "
+              "un tikai tad signāls nonāk pie pilsētas inspektora.\n\n"
+              "Tas papildina tālruni 1201, nevis aizstāj to. Mēs neprasām vārdu, tālruni vai e-pastu.",
+        "en": "🏮 Lantern — report uncleared sidewalks in Riga.\n\n"
+              "Send a photo, the location, and tell us whether people can get through. AI checks the photo, "
+              "and only then the signal reaches the city inspector.\n\n"
+              "This complements the 1201 phone line, it does not replace it. We never ask for your name, phone or email.",
+        "ru": "🏮 Lantern — сообщите о неубранном тротуаре в Риге.\n\n"
+              "Пришлите фото, место и укажите, можно ли пройти. Нейросеть проверит фото, "
+              "и только после этого сигнал попадёт к инспектору города.\n\n"
+              "Бот дополняет телефон 1201, а не заменяет его. Имя, телефон и e-mail мы не спрашиваем.",
+    },
+    "ask_photo": {
+        "lv": "📷 1/3 Nosūti vienu foto ar sniegu, ledu vai aizšķērsotu ietvi.",
+        "en": "📷 1/3 Send one photo of the snow, ice or blocked sidewalk.",
+        "ru": "📷 1/3 Пришлите одно фото снега, льда или перекрытого тротуара.",
+    },
+    "ask_location": {
+        "lv": "📍 2/3 Tagad atrašanās vieta. Nospied pogu zemāk — vai nosūti citu punktu: 📎 → Atrašanās vieta.",
+        "en": "📍 2/3 Now the location. Tap the button below — or send another point via 📎 → Location.",
+        "ru": "📍 2/3 Теперь место. Нажмите кнопку ниже — или отправьте другую точку: 📎 → Геопозиция.",
+    },
+    "btn_location": {"lv": "📍 Sūtīt manu atrašanās vietu", "en": "📍 Send my location",
+                     "ru": "📍 Отправить моё местоположение"},
+    "location_ok": {"lv": "Vieta saņemta ✅", "en": "Location received ✅", "ru": "Место получено ✅"},
+    "ask_passable": {
+        "lv": "🚶 3/3 Vai var paiet garām?",
+        "en": "🚶 3/3 Can people get through?",
+        "ru": "🚶 3/3 Можно ли пройти?",
+    },
+    "pass_no": {"lv": "⛔ Nevar", "en": "⛔ No", "ru": "⛔ Нельзя"},
+    "pass_partly": {"lv": "⚠️ Daļēji", "en": "⚠️ Partly", "ru": "⚠️ Частично"},
+    "pass_yes": {"lv": "✅ Var", "en": "✅ Yes", "ru": "✅ Можно"},
+    "ask_hazard": {
+        "lv": "Kas tur ir? (nav obligāti)",
+        "en": "What is there? (optional)",
+        "ru": "Что там? (необязательно)",
+    },
+    "haz_snow": {"lv": "❄️ Sniegs", "en": "❄️ Snow", "ru": "❄️ Снег"},
+    "haz_ice": {"lv": "🧊 Ledus", "en": "🧊 Ice", "ru": "🧊 Лёд"},
+    "haz_icicles": {"lv": "🔻 Lāstekas", "en": "🔻 Icicles", "ru": "🔻 Сосульки"},
+    "haz_other": {"lv": "Cits", "en": "Other", "ru": "Другое"},
+    "ask_place": {
+        "lv": "Kāda vieta? (nav obligāti)",
+        "en": "What kind of place? (optional)",
+        "ru": "Что за место? (необязательно)",
+    },
+    "place_sidewalk": {"lv": "Ietve", "en": "Sidewalk", "ru": "Тротуар"},
+    "place_crossing": {"lv": "Gājēju pāreja", "en": "Crossing", "ru": "Переход"},
+    "place_ramp": {"lv": "Nobrauktuve", "en": "Curb ramp", "ru": "Съезд"},
+    "place_stop": {"lv": "Pietura", "en": "Bus stop", "ru": "Остановка"},
+    "place_other": {"lv": "Cits", "en": "Other", "ru": "Другое"},
+    "skip": {"lv": "Izlaist ➡️", "en": "Skip ➡️", "ru": "Пропустить ➡️"},
+    "ask_comment": {
+        "lv": "💬 Komentārs (līdz 200 zīmēm) — uzraksti vai izlaid.",
+        "en": "💬 Comment (up to 200 characters) — type it or skip.",
+        "ru": "💬 Комментарий (до 200 символов) — напишите или пропустите.",
+    },
+    "comment_too_long": {
+        "lv": "Komentārs ir garāks par 200 zīmēm ({n}). Lūdzu, saīsini.",
+        "en": "The comment is longer than 200 characters ({n}). Please shorten it.",
+        "ru": "Комментарий длиннее 200 символов ({n}). Пожалуйста, сократите.",
+    },
+    "summary": {
+        "lv": "Pārbaudi un apstiprini:\n\n📷 foto: ir\n📍 vieta: {lat:.5f}, {lon:.5f}\n🚶 paiet: {passable}\n"
+              "❓ kas: {hazard}\n🏷 vieta: {place}\n💬 {comment}",
+        "en": "Check and confirm:\n\n📷 photo: attached\n📍 location: {lat:.5f}, {lon:.5f}\n🚶 passable: {passable}\n"
+              "❓ what: {hazard}\n🏷 place: {place}\n💬 {comment}",
+        "ru": "Проверьте и подтвердите:\n\n📷 фото: есть\n📍 место: {lat:.5f}, {lon:.5f}\n🚶 пройти: {passable}\n"
+              "❓ что: {hazard}\n🏷 место: {place}\n💬 {comment}",
+    },
+    "none": {"lv": "—", "en": "—", "ru": "—"},
+    "btn_send": {"lv": "✅ Sūtīt", "en": "✅ Send", "ru": "✅ Отправить"},
+    "btn_cancel": {"lv": "✖️ Atcelt", "en": "✖️ Cancel", "ru": "✖️ Отмена"},
+    "sending": {"lv": "Sūtu un pārbaudu foto… ⏳", "en": "Sending and checking the photo… ⏳",
+                "ru": "Отправляю и проверяю фото… ⏳"},
+    "accepted": {
+        "lv": "🏮 Paldies, signāls saņemts!\nPieteikuma kods: {ticket}\n\nKad situācija mainīsies, es tev pateikšu. "
+              "Statuss: /status",
+        "en": "🏮 Thank you, signal received!\nTicket: {ticket}\n\nI'll let you know when something changes. "
+              "Status: /status",
+        "ru": "🏮 Спасибо, сигнал принят!\nКод заявки: {ticket}\n\nЯ сообщу, когда что-то изменится. "
+              "Статус: /status",
+    },
+    "merged": {
+        "lv": "Par šo vietu jau ziņoja — tavs signāls pievienots un paaugstina prioritāti.",
+        "en": "This place was already reported — your signal was added and raises the priority.",
+        "ru": "Об этом месте уже сообщали — ваш сигнал добавлен и повышает приоритет.",
+    },
+    "review": {
+        "lv": "🏮 Paldies, signāls saņemts!\nPieteikuma kods: {ticket}\n\nInspektors vēl pārbaudīs foto.",
+        "en": "🏮 Thank you, signal received!\nTicket: {ticket}\n\nAn inspector will check the photo.",
+        "ru": "🏮 Спасибо, сигнал принят!\nКод заявки: {ticket}\n\nИнспектор дополнительно проверит фото.",
+    },
+    "rejected": {
+        "lv": "Paldies! Diemžēl foto neizskatās pēc bīstamas ietves (sniegs, ledus, lāstekas), tāpēc "
+              "inspektoram to nenosūtījām. Ja kļūdījāmies — mēģini vēlreiz ar tuvāku foto.\nKods: {ticket}",
+        "en": "Thank you! Unfortunately the photo doesn't look like a sidewalk hazard (snow, ice, icicles), so it "
+              "was not sent to the inspector. If we got it wrong, try again with a closer photo.\nTicket: {ticket}",
+        "ru": "Спасибо! К сожалению, фото не похоже на опасный тротуар (снег, лёд, сосульки), поэтому "
+              "к инспектору оно не ушло. Если мы ошиблись — попробуйте ещё раз с фото поближе.\nКод: {ticket}",
+    },
+    "send_failed": {
+        "lv": "Neizdevās nosūtīt — serveris nav pieejams. Mēģini vēlreiz pēc brīža (✅ Sūtīt) vai zvani 1201.",
+        "en": "Could not send — the server is unavailable. Try again in a moment (✅ Send) or call 1201.",
+        "ru": "Не удалось отправить — сервер недоступен. Попробуйте чуть позже (✅ Отправить) или позвоните 1201.",
+    },
+    "photo_failed": {
+        "lv": "Neizdevās lejupielādēt foto. Lūdzu, nosūti to vēlreiz.",
+        "en": "Could not download the photo. Please send it again.",
+        "ru": "Не удалось загрузить фото. Пожалуйста, пришлите его ещё раз.",
+    },
+    "photo_too_big": {
+        "lv": "Foto ir lielāks par 10 MB. Lūdzu, nosūti mazāku.",
+        "en": "The photo is larger than 10 MB. Please send a smaller one.",
+        "ru": "Фото больше 10 МБ. Пожалуйста, пришлите поменьше.",
+    },
+    "cancelled": {"lv": "Atcelts. Lai sāktu no jauna, nosūti foto.", "en": "Cancelled. Send a photo to start again.",
+                  "ru": "Отменено. Чтобы начать заново, пришлите фото."},
+    "need_photo": {"lv": "Vispirms nosūti foto 📷", "en": "Please send a photo first 📷",
+                   "ru": "Сначала пришлите фото 📷"},
+    "need_location": {"lv": "Nosūti atrašanās vietu ar pogu zemāk 📍", "en": "Send the location with the button below 📍",
+                      "ru": "Отправьте место кнопкой ниже 📍"},
+    "use_buttons": {"lv": "Izvēlies kādu no pogām ziņā augstāk 👆", "en": "Please choose one of the buttons above 👆",
+                    "ru": "Выберите одну из кнопок выше 👆"},
+    "help": {
+        "lv": "Kā ziņot: nosūti foto → atrašanās vietu → pasaki, vai var paiet → apstiprini.\n\n"
+              "/start — jauns ziņojums\n/status — mani pieteikumi\n/lang — valoda\n/cancel — atcelt\n\n"
+              "Steidzamos gadījumos zvani 1201 vai 112.",
+        "en": "How to report: send a photo → the location → whether people can get through → confirm.\n\n"
+              "/start — new report\n/status — my tickets\n/lang — language\n/cancel — cancel\n\n"
+              "In urgent cases call 1201 or 112.",
+        "ru": "Как сообщить: фото → место → можно ли пройти → подтвердить.\n\n"
+              "/start — новое сообщение\n/status — мои заявки\n/lang — язык\n/cancel — отменить\n\n"
+              "В срочных случаях звоните 1201 или 112.",
+    },
+    "no_tickets": {"lv": "Tev vēl nav pieteikumu. Nosūti foto, lai sāktu.",
+                   "en": "You have no tickets yet. Send a photo to start.",
+                   "ru": "У вас пока нет заявок. Пришлите фото, чтобы начать."},
+    "status_header": {"lv": "Tavi pieteikumi:", "en": "Your tickets:", "ru": "Ваши заявки:"},
+    "status_unknown": {"lv": "statuss nav pieejams", "en": "status unavailable", "ru": "статус недоступен"},
+    # ticket states
+    "st_rejected": {"lv": "noraidīts (nav bīstamība)", "en": "rejected (not a hazard)", "ru": "отклонено (не опасность)"},
+    "st_in_review": {"lv": "gaida inspektora pārbaudi", "en": "waiting for an inspector check",
+                     "ru": "ждёт проверки инспектора"},
+    "st_watch": {"lv": "pieņemts, gaidām tīrīšanas termiņu", "en": "accepted, clearing deadline still running",
+                 "ru": "принято, срок уборки ещё идёт"},
+    "st_open": {"lv": "nosūtīts tīrītājiem", "en": "sent to the cleaning contractor", "ru": "передано подрядчику"},
+    "st_done_reported": {"lv": "tīrītāji ziņo, ka notīrīts — pārbaudām", "en": "contractor says it is cleared — checking",
+                         "ru": "подрядчик сообщил, что убрано — проверяем"},
+    "st_reopened": {"lv": "joprojām nav notīrīts — atkārtoti nosūtīts", "en": "still not cleared — sent back again",
+                    "ru": "всё ещё не убрано — отправлено повторно"},
+    "st_verified": {"lv": "notīrīts un pārbaudīts ✅", "en": "cleared and verified ✅", "ru": "убрано и проверено ✅"},
+    "others": {"lv": "vēl {n} iedzīvotāji ziņoja", "en": "{n} other residents reported it",
+               "ru": "ещё {n} жителей сообщили"},
+    "camera": {"lv": "apstiprina pilsētas kamera", "en": "confirmed by a city camera",
+               "ru": "подтверждено камерой города"},
+    # push notifications
+    "push_open": {
+        "lv": "🏮 {ticket}: pieteikums nosūtīts tīrītājiem. Paldies, ka ziņoji!",
+        "en": "🏮 {ticket}: your report was sent to the cleaning contractor. Thanks for reporting!",
+        "ru": "🏮 {ticket}: заявка передана подрядчику по уборке. Спасибо, что сообщили!",
+    },
+    "push_done_reported": {
+        "lv": "🧹 {ticket}: tīrītāji ziņo, ka vieta notīrīta. Pilsēta to vēl pārbaudīs.",
+        "en": "🧹 {ticket}: the contractor reports the place is cleared. The city will verify it.",
+        "ru": "🧹 {ticket}: подрядчик сообщил, что место убрано. Город это проверит.",
+    },
+    "push_reopened": {
+        "lv": "⚠️ {ticket}: pārbaude rāda, ka vieta joprojām nav notīrīta — pieteikums atkārtoti nosūtīts.",
+        "en": "⚠️ {ticket}: the check shows the place is still not cleared — the ticket was sent back.",
+        "ru": "⚠️ {ticket}: проверка показала, что место всё ещё не убрано — заявка отправлена повторно.",
+    },
+    "push_verified": {
+        "lv": "✅ {ticket}: vieta notīrīta un pārbaudīta. Paldies, tu palīdzēji kaimiņiem!",
+        "en": "✅ {ticket}: the place is cleared and verified. Thank you, you helped your neighbours!",
+        "ru": "✅ {ticket}: место убрано и проверено. Спасибо, вы помогли соседям!",
+    },
+}
+
+
+def t(key: str, lang: str, **kw) -> str:
+    entry = T.get(key, {})
+    text = entry.get(lang) or entry.get("en") or key
+    return text.format(**kw) if kw else text

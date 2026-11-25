@@ -224,6 +224,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
     def list_alerts(role: str = "inspector", district: Optional[str] = None, contractor: Optional[str] = None,
                     status: Optional[str] = None, active: bool = False):
         districts = _role_scope(role, district, contractor)
+        engine.tick()  # deadline check on every read too, in case the background loop lags
         if role == "inspector" and district:
             districts_rows = [a for a in views.alert_rows("inspector", status=status, include_closed=not active)
                               if a["district"] == district]
@@ -264,6 +265,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
 
     @app.get("/inspection/today", tags=["inspector"])
     def inspection_today(limit: int = Query(10, ge=1, le=100)):
+        engine.tick()
         return {"now": fmt_ts(clock.now()), "alerts": views.inspection_today(limit)}
 
     @app.get("/stats/response", tags=["inspector"])
@@ -311,9 +313,13 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
 
     @app.post("/admin/reset", tags=["inspector"])
     def reset(keep_settings: bool = True):
-        """Demo only: wipe alerts, signals, reports and history."""
+        """Demo only: wipe alerts, signals, reports and history. The snowfall end is cleared too
+        (a stale one would open every new alert at once); time compression is kept."""
         db.reset()
-        if not keep_settings:
+        if keep_settings:
+            db.run("INSERT INTO settings(key, value) VALUES('snowfall_end', '') "
+                   "ON CONFLICT(key) DO UPDATE SET value = ''")
+        else:
             db.run("DELETE FROM settings")
         return {"ok": True}
 

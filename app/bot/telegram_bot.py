@@ -34,7 +34,7 @@ MAX_PHOTO = 10 * 1024 * 1024
 COMMENT_MAX = 200
 TRACK_DAYS = 7
 STATUS_EVERY = 30.0
-NOTIFY_STATUSES = ("open", "done_reported", "reopened", "verified")
+NOTIFY_STATUSES = ("open", "done_reported", "reopened", "verified", "cleared_in_time")
 HAZARDS = ("snow", "ice", "icicles", "other")
 PLACES = ("sidewalk", "crossing", "ramp", "stop", "other")
 
@@ -477,7 +477,7 @@ class LanternBot:
                     if status in NOTIFY_STATUSES:
                         self.send(int(chat_id), t(f"push_{status}", L, ticket=item["ticket"]))
                         sent += 1
-                    if status == "verified":
+                    if status in ("verified", "cleared_in_time"):
                         item["done"] = True
         if changed:
             self.state.save()

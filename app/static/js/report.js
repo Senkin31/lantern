@@ -21,6 +21,7 @@
       place_h: "Kāda vieta?", place_sidewalk: "Ietve", place_crossing: "Gājēju pāreja", place_ramp: "Nobrauktuve",
       place_stop: "Pietura", place_other: "Cits",
       comment_h: "Komentārs", comment_ph: "Piemēram: sniega valnis pie pārejas",
+      regno_h: "Domes reģistrācijas numurs (ja ir)", regno_ph: "Oficiālai sūdzībai, nav obligāts",
       submit: "Sūtīt", sending: "Sūta un pārbauda foto…",
       need: "Vēl vajag: {list}", need_photo: "foto", need_loc: "vietu", need_pass: "atbildi, vai var paiet",
       err_send: "Neizdevās nosūtīt. Pārbaudi internetu un mēģini vēlreiz.",
@@ -43,6 +44,7 @@
       st_done_reported: "Tīrītāji ziņo, ka notīrīts — pilsēta pārbauda",
       st_reopened: "Joprojām nav notīrīts — nosūtīts atkārtoti",
       st_verified: "Notīrīts un pārbaudīts",
+      st_cleared_in_time: "Notīrīts laikā, pirms termiņa",
       others: "Vēl {n} iedzīvotāji ziņoja par šo vietu",
       camera: "Apstiprina pilsētas kamera",
       updated: "Atjaunots {t}",
@@ -66,6 +68,7 @@
       place_h: "What kind of place?", place_sidewalk: "Sidewalk", place_crossing: "Crossing", place_ramp: "Curb ramp",
       place_stop: "Bus stop", place_other: "Other",
       comment_h: "Comment", comment_ph: "e.g. snowbank at the crossing",
+      regno_h: "Council registration number (if any)", regno_ph: "For a formal complaint, optional",
       submit: "Send", sending: "Sending and checking the photo…",
       need: "Still needed: {list}", need_photo: "a photo", need_loc: "the place", need_pass: "whether people can get through",
       err_send: "Could not send. Check your connection and try again.",
@@ -88,6 +91,7 @@
       st_done_reported: "Contractor says it's cleared — the city is checking",
       st_reopened: "Still not cleared — sent back again",
       st_verified: "Cleared and verified",
+      st_cleared_in_time: "Cleared in time, before the deadline",
       others: "{n} other residents reported this place",
       camera: "Confirmed by a city camera",
       updated: "Updated {t}",
@@ -111,6 +115,7 @@
       place_h: "Что за место?", place_sidewalk: "Тротуар", place_crossing: "Переход", place_ramp: "Съезд",
       place_stop: "Остановка", place_other: "Другое",
       comment_h: "Комментарий", comment_ph: "Например: снежный вал у перехода",
+      regno_h: "Регистрационный номер думы (если есть)", regno_ph: "Для формальной жалобы, необязательно",
       submit: "Отправить", sending: "Отправляю и проверяю фото…",
       need: "Ещё нужно: {list}", need_photo: "фото", need_loc: "место", need_pass: "можно ли пройти",
       err_send: "Не удалось отправить. Проверьте интернет и попробуйте ещё раз.",
@@ -133,6 +138,7 @@
       st_done_reported: "Подрядчик сообщил, что убрано — город проверяет",
       st_reopened: "Всё ещё не убрано — отправлено повторно",
       st_verified: "Убрано и проверено",
+      st_cleared_in_time: "Убрано вовремя, до срока",
       others: "Ещё {n} жителей сообщили об этом месте",
       camera: "Подтверждено камерой города",
       updated: "Обновлено {t}",
@@ -299,6 +305,8 @@
     fd.append("passable", state.passable);
     if (state.hazard) fd.append("hazard", state.hazard);
     if (state.place_type) fd.append("place_type", state.place_type);
+    const regno = ($("regno") && $("regno").value || "").trim();
+    if (regno) fd.append("registration_no", regno);
     const comment = $("comment").value.trim().slice(0, 200);
     if (comment) fd.append("comment", comment);
     fd.append("channel", "web");
@@ -384,7 +392,7 @@
         p.textContent = tr("updated", { t: new Date(st.updated_at).toLocaleString(lang === "lv" ? "lv-LV" : lang === "ru" ? "ru-RU" : "en-GB") });
         box.append(p);
       }
-      if (st.alert_status === "verified") clearInterval(pollTimer);
+      if (st.alert_status === "verified" || st.alert_status === "cleared_in_time") clearInterval(pollTimer);
     } catch (e) {
       box.replaceChildren(line("rejected", tr("err_send")));
     }

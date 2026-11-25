@@ -7,7 +7,7 @@
   const S = {
     meta: null, map: null, alerts: [], settings: null,
     tab: "today", selected: null, detail: null, filter: "active",
-    layers: new Map(), fitted: false, rendered: {}, withinHours: 6,
+    layers: new Map(), fitted: false, rendered: {}, withinHours: 24,
     data: { today: null, reviewReports: null, rejectReports: null, stats: null },
   };
   const ACTOR = "inspector";
@@ -30,8 +30,7 @@
       return;
     }
     S.settings = S.meta.settings;
-    L$.setHourSeconds(S.settings.hour_seconds);
-    L$.syncClock(S.settings.now);
+    L$.syncFromSettings(S.settings);
     renderChrome();
     S.map = L$.makeMap($("#map"), S.meta);
     drawCameraZones();
@@ -55,8 +54,7 @@
       const res = await api("/alerts?role=inspector");
       S.alerts = res.alerts;
       S.settings = res.settings;
-      L$.syncClock(res.now);
-      L$.setHourSeconds(S.settings.hour_seconds);
+      L$.syncFromSettings(S.settings);
       const jobs = [];
       if (S.tab === "today") jobs.push(api("/inspection/today").then((r) => { S.data.today = r.alerts; }));
       if (S.tab === "reports") {
@@ -83,30 +81,22 @@
     renderPanel();
   }
 
-  // ---------------------------------------------------------------- demo bar
+  // ---------------------------------------------------------------- demo bar (clock, snowfall, deadline)
   function renderDemoBar(force) {
     const el = $("#demo");
     const s = S.settings || {};
     if (force || !el.dataset.built) {
       el.innerHTML = `
         <span class="tag">${esc(t("demo"))}</span>
+        <span class="kv">${esc(t("rigaTime"))}: <b id="dNow"></b> <span class="muted small" id="dClock"></span></span>
         <span class="kv">${esc(t("snowfallEnd"))}: <b id="dSnow"></b></span>
-        <span class="kv">${esc(t("deadline"))}: <b id="dDeadline"></b> <span class="countdown" id="dCount"></span></span>
-        <span class="group"><label for="dClear" class="muted small">${esc(t("clearingHoursLabel"))}</label><input id="dClear" type="number" min="0" step="0.5"></span>
-        <span class="group"><label for="dHour" class="muted small">${esc(t("hourSecondsLabel"))}</label><input id="dHour" type="number" min="0.1" step="0.5"></span>
-        <button class="btn" id="dApply" type="button">${esc(t("btnApply"))}</button>
+        <span class="kv" title="${esc(t("deadlineRule"))}">${esc(t("deadline"))}: <b id="dDeadline"></b> <span class="countdown" id="dCount"></span></span>
+        <button class="btn" id="dSnowStart" type="button">🌨 ${esc(t("btnSnowStart"))}</button>
         <button class="btn primary" id="dSnowBtn" type="button">❄ ${esc(t("btnSnowfall"))}</button>
-        <button class="btn bad" id="dReset" type="button">${esc(t("btnReset"))}</button>
-        <span class="muted small" id="dNote"></span>`;
+        <button class="btn bad" id="dReset" type="button">${esc(t("btnReset"))}</button>`;
       el.dataset.built = "1";
-      $("#dSnowBtn").addEventListener("click", () => postSettings({ snowfall_end: "now" }));
-      $("#dApply").addEventListener("click", () => {
-        const body = {};
-        const ch = parseFloat($("#dClear").value), hs = parseFloat($("#dHour").value);
-        if (!isNaN(ch)) body.clearing_hours = ch;
-        if (!isNaN(hs) && hs > 0) body.hour_seconds = hs;
-        postSettings(body);
-      });
+      $("#dSnowStart").addEventListener("click", () => postSnowfall({ start: "now", source: "inspector" }));
+      $("#dSnowBtn").addEventListener("click", () => postSnowfall({ end: "now", source: "inspector" }));
       $("#dReset").addEventListener("click", async () => {
         if (!confirm(t("confirmReset"))) return;
         try {
@@ -118,15 +108,18 @@
         } catch (e) { L$.toast(e.message, true); }
       });
     }
-    $("#dSnow").textContent = s.snowfall_end ? L$.fmtTime(s.snowfall_end) : t("notSet");
-    $("#dDeadline").textContent = s.deadline ? L$.fmtTime(s.deadline) : t("notSet");
-    if (document.activeElement !== $("#dClear")) $("#dClear").value = s.clearing_hours != null ? s.clearing_hours : "";
-    if (document.activeElement !== $("#dHour")) $("#dHour").value = s.hour_seconds != null ? +(+s.hour_seconds).toFixed(3) : "";
-    $("#dNote").textContent = s.hour_seconds && s.hour_seconds !== 3600 ? `${t("hourIs")} ${+(+s.hour_seconds).toFixed(2)} ${t("sec")} · ${t("demoTimeNote")}` : "";
+    const sf = s.snowfall;
+    $("#dSnow").textContent = !sf ? t("snowUnknown")
+      : (sf.end ? t("snowEnded", { t: L$.fmtTime(sf.end) }) : t("snowingSince", { t: L$.fmtTime(sf.start) }));
+    $("#dDeadline").textContent = s.deadline ? L$.fmtTime(s.deadline) : (s.snowing ? "…" : t("notSet"));
+    $("#dClock").textContent = s.clock && s.clock.mode === "demo" ? `(${t("demoClock", { f: s.clock.factor })})` : "";
+    $("#dSnowBtn").disabled = !s.snowing && !!sf;
     tickCountdown();
   }
 
   function tickCountdown() {
+    const n = $("#dNow");
+    if (n) n.textContent = L$.clockText();
     const el = $("#dCount");
     if (!el || !S.settings) return;
     if (!S.settings.deadline) { el.textContent = ""; return; }
@@ -135,10 +128,11 @@
     el.textContent = left <= 0 ? `(${t("passed")})` : `(${t("in")} ${L$.fmtDur(left)})`;
   }
 
-  async function postSettings(body) {
+  async function postSnowfall(body) {
     try {
-      S.settings = await api("/settings", { json: body });
-      L$.setHourSeconds(S.settings.hour_seconds);
+      const r = await api("/snowfalls", { json: body });
+      S.settings = r.settings;
+      L$.syncFromSettings(S.settings);
       L$.toast(t("saved"));
       await refresh();
     } catch (e) { L$.toast(e.message, true); }
@@ -171,7 +165,8 @@
       d.innerHTML = [["high", c.high], ["medium", c.medium], ["low", c.low]].map(([k, col]) => `<div><i style="background:${col}"></i>${esc(t("lv_" + k))}</div>`).join("")
         + `<div><i style="background:${c.watch}"></i>${esc(t("st_watch"))}</div>`
         + `<div><i style="background:${c.reopened}"></i>${esc(t("st_reopened"))}</div>`
-        + `<div><i style="background:${c.verified}"></i>${esc(t("st_verified"))}</div>`;
+        + `<div><i style="background:${c.verified}"></i>${esc(t("st_verified"))}</div>`
+        + `<div><i style="background:${c.cleared}"></i>${esc(t("st_cleared_in_time"))}</div>`;
       return d;
     };
     S.legend.addTo(S.map);
@@ -185,7 +180,7 @@
   function styleFor(a) {
     const col = L$.alertColor(a);
     const sel = S.selected === a.id;
-    const verified = a.status === "verified";
+    const verified = L$.isClosed(a);
     return {
       poly: { color: a.status === "reopened" ? L$.COLORS.reopened : col, weight: sel ? 4 : 2, fillColor: col,
         fillOpacity: verified ? 0.12 : 0.38, opacity: verified ? 0.5 : 0.95, dashArray: a.status === "watch" ? "5 4" : null },
@@ -203,7 +198,7 @@
       seen.add(a.id);
       const st = styleFor(a);
       let l = S.layers.get(a.id);
-      const tip = `#${a.id} · ${t("st_" + a.status)} · ${t("lv_" + a.urgency_level)} (${a.urgency_score})<br>${esc(L$.place(a.place_type))}${a.report_count ? ` · ${a.report_count} 👤` : ""}`;
+      const tip = `#${a.id} · ${t("st_" + a.status)} · ${t("lv_" + a.urgency_level)} (${a.urgency_score})${a.opened_at ? " · " + t("sev_" + a.severity) : ""}${a.overdue ? " · " + t("overdue") : ""}<br>${esc(L$.place(a.place_type))}${a.report_count ? ` · ${a.report_count} 👤` : ""}`;
       if (!l) {
         l = {};
         if (a.polygon) {
@@ -220,7 +215,7 @@
         l.marker.setRadius(st.marker.radius);
         l.marker.setTooltipContent(tip);
       }
-      if (a.status !== "verified") l.marker.bringToFront();
+      if (!L$.isClosed(a)) l.marker.bringToFront();
       bounds.push([a.lat, a.lon]);
     });
     S.layers.forEach((l, id) => { if (!seen.has(id)) { if (l.poly) l.poly.remove(); l.marker.remove(); S.layers.delete(id); } });
@@ -244,8 +239,8 @@
 
   // ---------------------------------------------------------------- tabs
   function renderTabs() {
-    const reviewCount = S.alerts.filter((a) => a.status !== "verified" && (a.inspector_flags || []).includes("review_report")).length;
-    const active = S.alerts.filter((a) => a.status !== "verified").length;
+    const reviewCount = S.alerts.filter((a) => !L$.isClosed(a) && (a.inspector_flags || []).includes("review_report")).length;
+    const active = S.alerts.filter((a) => !L$.isClosed(a)).length;
     const tabs = [["today", t("tabToday")], ["all", t("tabAll"), active], ["reports", t("tabReports"), reviewCount || null], ["stats", t("tabStats")]];
     const html = tabs.map(([k, label, n]) => `<button role="tab" type="button" data-tab="${k}" aria-selected="${S.tab === k && !S.selected}">${esc(label)}${n ? `<span class="count">${n}</span>` : ""}</button>`).join("");
     if (setHTML($("#tabs"), "tabs", html)) {
@@ -303,7 +298,8 @@
   function itemHTML(a, rank) {
     const col = L$.alertColor(a);
     const chips = (a.why || a.inspector_flags || []).map((w) => {
-      const cls = w === "reopened" ? "purple" : (w === "high" || w === "possible_ice" || w === "ice_report") ? "alarm" : "warn";
+      const cls = w === "act" ? "sev-act" : w === "overdue" ? "overdue" : w === "reopened" ? "purple"
+        : (w === "high" || w === "possible_ice" || w === "ice_report") ? "alarm" : "warn";
       return `<span class="chip ${cls}">${esc(t("why_" + w))}</span>`;
     }).join("");
     const meta = [
@@ -316,7 +312,7 @@
     return `<button type="button" class="item ${a.status === "watch" ? "watchy" : ""} ${S.selected === a.id ? "active" : ""}" data-alert="${a.id}">
       <span class="bar" style="background:${col}"></span>
       <span>
-        <span class="title">#${a.id} ${L$.statusBadge(a.status)} ${a.flagged_for_council ? `<span class="chip purple">⚑</span>` : ""}</span>
+        <span class="title">#${a.id} ${L$.statusBadge(a.status)} ${a.opened_at && !a.why ? L$.severityBadge(a) : ""} ${a.overdue && !a.why ? `<span class="chip overdue">${esc(t("overdue"))}</span>` : ""} ${a.flagged_for_council ? `<span class="chip purple">⚑</span>` : ""}</span>
         <span class="meta">${meta}</span>
         ${chips ? `<span style="display:block;margin-top:4px">${chips}</span>` : ""}
       </span>
@@ -328,17 +324,17 @@
     const list = S.data.today;
     if (!list) return `<div class="empty">${esc(t("loading"))}</div>`;
     return `<div class="panel-head"><h2>${esc(t("tabToday"))}</h2></div>
-      <p class="muted small" style="margin-top:-4px">${esc(t("todayHint"))}</p>
+      <p class="muted small" style="margin-top:-4px">${esc(t("todayHint", { h: (S.settings && S.settings.inspection_hours) || "08:30-17:00" }))}</p>
       ${list.length ? list.map((a, i) => itemHTML(a, i + 1)).join("") : `<div class="empty">${esc(t("nothingToday"))}</div>`}`;
   }
 
   function allHTML() {
-    const order = { reopened: 0, open: 1, done_reported: 2, watch: 3, verified: 4 };
+    const order = { reopened: 0, open: 1, done_reported: 2, watch: 3, verified: 4, cleared_in_time: 5 };
     let list = S.alerts.slice();
-    if (S.filter === "active") list = list.filter((a) => a.status !== "verified");
+    if (S.filter === "active") list = list.filter((a) => !L$.isClosed(a));
     else if (S.filter !== "all") list = list.filter((a) => a.status === S.filter);
     list.sort((a, b) => (order[a.status] - order[b.status]) || (b.urgency_score - a.urgency_score) || (b.id - a.id));
-    const opts = [["active", t("activeOnly")], ["all", t("allStatuses")]].concat(["watch", "open", "done_reported", "reopened", "verified"].map((s) => [s, t("st_" + s)]));
+    const opts = [["active", t("activeOnly")], ["all", t("allStatuses")]].concat(["watch", "open", "done_reported", "reopened", "verified", "cleared_in_time"].map((s) => [s, t("st_" + s)]));
     return `<div class="panel-head"><h2>${esc(t("tabAll"))}</h2>
         <select id="statusFilter" aria-label="Status">${opts.map(([v, l]) => `<option value="${v}" ${S.filter === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
       ${list.length ? list.map((a) => itemHTML(a)).join("") : `<div class="empty">${esc(t("noAlerts"))}</div>`}`;
@@ -352,6 +348,7 @@
         <div><b>#${r.id}</b> · ${esc(L$.fmtTime(r.timestamp))} · ${esc(r.channel || "")}</div>
         <div class="small">${esc(t("ps_" + r.passable))} · ${esc(L$.hazard(r.hazard))} · ${esc(L$.place(r.place_type))}</div>
         ${r.comment ? `<div class="small">“${esc(r.comment)}”</div>` : ""}
+        ${r.registration_no ? `<div class="small">${esc(t("regNo"))}: <b>${esc(r.registration_no)}</b></div>` : ""}
         <div class="small muted">${esc(t("aiSays"))}: ${esc(ai)}${r.ai_note ? ` — ${esc(r.ai_note)}` : ""}</div>
         ${r.same_photo_as ? `<div class="chip warn">${esc(t("samePhotoAs", { n: r.same_photo_as }))}</div>` : ""}
         ${r.alert_id ? `<div class="small"><a href="#" data-alert="${r.alert_id}">${esc(t("alert"))} #${r.alert_id}</a></div>` : ""}
@@ -397,10 +394,13 @@
     return `<div class="tbl-wrap"><table class="tbl"><thead><tr>
       <th>${esc(nameKey)}</th><th class="num">${esc(t("c_opened"))}</th><th class="num">${esc(t("c_verified"))}</th>
       <th class="num">${esc(t("c_avg"))}</th><th class="num">${esc(t("c_within", { n }))}</th><th class="num">${esc(t("c_reopened"))}</th>
+      <th class="num">${esc(t("c_overdue"))}</th><th class="num">${esc(t("c_act"))}</th>
       <th class="num">${esc(t("c_notify"))}</th><th class="num">${esc(t("c_kpi", { n: k }))}</th></tr></thead><tbody>
       ${rows.map((r) => `<tr><td>${esc(r.name || r.id)}</td><td class="num">${r.opened}</td><td class="num">${r.verified}</td>
         <td class="num">${L$.hours(r.avg_response_hours)}</td><td class="num">${L$.pct(r.share_within)}</td>
-        <td class="num">${r.reopened_times}</td><td class="num">${r.avg_notify_minutes == null ? t("none") : Math.round(r.avg_notify_minutes)}</td>
+        <td class="num">${r.reopened_times}</td>
+        <td class="num" style="${r.overdue ? "color:var(--high);font-weight:700" : ""}">${r.overdue}</td><td class="num">${r.act}</td>
+        <td class="num">${r.avg_notify_minutes == null ? t("none") : Math.round(r.avg_notify_minutes)}</td>
         <td class="num">${L$.pct(r.share_notify_kpi)}</td></tr>`).join("")}
       </tbody></table></div>`;
   }
@@ -417,7 +417,7 @@
     if (!st.by_contractor.length) return head + `<div class="empty">${esc(t("noStats"))}</div>` + exp;
     return head + `<h3 class="muted small">${esc(t("byContractor"))}</h3>${statsTable(st.by_contractor, t("contractorL"))}
       <h3 class="muted small" style="margin-top:14px">${esc(t("byDistrict"))}</h3>${statsTable(st.by_district, t("district"))}
-      <p class="muted small">${esc(t("demoTimeNote"))}${st.hour_seconds !== 3600 ? ` (${t("hourIs")} ${+(+st.hour_seconds).toFixed(2)} ${t("sec")})` : ""}</p>${exp}`;
+      <p class="muted small">${esc(t("statsNote"))}</p>${exp}`;
   }
 
   // ---------------------------------------------------------------- alert card
@@ -433,11 +433,13 @@
     const reasons = (d.urgency_reasons || []).map((r) => `<li><span>${esc(L$.reasonText(r))}</span><span class="pts">${r.points != null ? "+" + r.points : ""}</span></li>`).join("");
     const tl = [
       [t("firstSeen"), L$.fmtTime(d.first_seen_at)],
+      [t("deadlineAt"), L$.fmtTime(d.deadline_at)],
       [t("detected"), L$.fmtTime(d.detected_at)],
-      [t("opened"), L$.fmtTime(d.opened_at)],
+      [t("opened"), L$.fmtTime(d.notified_at)],
+      [t("fixDue"), d.fix_due_at ? { html: `${esc(L$.fmtTime(d.fix_due_at))}${d.overdue ? ` <span class="chip overdue">${esc(t("overdue"))}</span>` : ""}` } : t("none")],
       [t("doneReported"), L$.fmtTime(d.done_reported_at)],
       [t("verified"), L$.fmtTime(d.verified_at)],
-      [t("responseTime"), d.response_hours != null ? `${L$.hours(d.response_hours)} ${t("h")}` : (d.opened_at && d.status !== "verified" ? { html: L$.sinceSpan(d.opened_at, "…") } : t("none"))],
+      [t("responseTime"), d.response_hours != null ? `${L$.hours(d.response_hours)} ${t("h")}` : (d.notified_at && !L$.isClosed(d) ? { html: L$.sinceSpan(d.notified_at, "…") } : t("none"))],
       [t("notifyDelay"), d.notify_seconds != null ? L$.fmtDur(d.notify_seconds) : t("none")],
       [t("reopenedTimes"), `${d.reopened_count} ${t("times")}`],
     ].map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v && v.html ? v.html : esc(v)}</dd>`).join("");
@@ -449,6 +451,7 @@
         <div><b>${esc(t("ps_" + r.passable))}</b> · ${esc(L$.hazard(r.hazard))}</div>
         <div>${esc(L$.fmtTime(r.timestamp))} · ${esc(r.channel || "")} · ${esc(r.device || "")}</div>
         ${r.comment ? `<div>“${esc(r.comment)}”</div>` : ""}
+        ${r.registration_no ? `<div>${esc(t("regNo"))}: <b>${esc(r.registration_no)}</b></div>` : ""}
         ${r.duplicate ? `<div class="chip">${esc(t("duplicate"))}</div>` : (!r.counted ? `<div class="chip warn">${esc(t("notCounted"))} (${esc(r.relevant)})</div>` : "")}
       </div>`).join("")}</div>` : `<p class="muted small">${esc(t("noReports"))}</p>`;
     const sigs = (d.signals || []).length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>${esc(t("time"))}</th><th>${esc(t("cls"))}</th><th class="num">${esc(t("share"))}</th><th class="num">${esc(t("conf"))}</th><th></th></tr></thead><tbody>
@@ -461,7 +464,8 @@
 
     const acts = [];
     if (d.status === "watch") acts.push(["open", t("actDispatch"), "primary"]);
-    if (d.status !== "verified") acts.push(["verified", t("actVerify"), "good"]);
+    if (d.status === "watch") acts.push(["cleared_in_time", t("actClean"), "good"]);
+    else if (!L$.isClosed(d)) acts.push(["verified", t("actVerify"), "good"]);
     if (d.status === "done_reported") acts.push(["reopened", t("actDispute"), "bad"]);
     if (d.status === "verified" && d.opened_at) acts.push(["reopened", t("actReopenVerified"), "bad"]);
 
@@ -473,7 +477,16 @@
         <div class="muted">${esc(L$.place(d.place_type))} · ${esc(t("district"))}: ${esc(d.district || t("none"))} · ${esc(t("contractorL"))}: ${esc(d.contractor_name || t("none"))}</div>
         <div class="muted small">${d.zone_id ? `${esc(t("zone"))}: ${esc(d.zone_id)}` : esc(t("reportOnly"))} · ${esc(t("hz_" + (d.hazard_now || "other")))}</div>
         ${d.status === "watch" ? `<div class="note-box">${esc(t("watchNote"))}</div>` : ""}
+        ${d.status === "cleared_in_time" ? `<div class="note-box">${esc(t("clearedNote"))}</div>` : ""}
         ${flags.length ? `<div style="margin-top:8px">${flags.map((f) => `<span class="chip ${f === "possible_ice" || f === "ice_report" ? "alarm" : "warn"}">${esc(t("why_" + f))}</span>`).join("")}</div>` : ""}
+      </section>
+      <section><h3>${esc(t("sevTitle"))}</h3>
+        <div class="sev-box">${L$.severityBadge(d)}
+          <span class="muted small">${d.severity_manual ? esc(t("sevManual")) + " · " : ""}${esc(t("sevSuggested", { s: t("sev_" + (d.severity_suggested || "notice")) }))}${d.severity_reason ? " — " + esc(d.severity_reason) : ""}</span>
+          <button class="btn" type="button" id="sevToggle" data-sev="${d.severity === "act" ? "notice" : "act"}">${esc(t(d.severity === "act" ? "sevToNotice" : "sevToAct"))}</button>
+          ${d.evidence_url ? `<a class="btn primary" href="${esc(d.evidence_url)}&lang=${esc(L$.lang)}" target="_blank" rel="noopener" title="${esc(t("evidenceHint"))}">📄 ${esc(t("evidencePack"))}</a>` : ""}
+        </div>
+        <p class="muted small" style="margin:6px 0 0">${esc(t("sevNote"))}</p>
       </section>
       <section><h3>${esc(t("why"))} · ${esc(t("urgency"))} ${d.urgency_score}</h3><ul class="reasons">${reasons || `<li class="muted">${esc(t("none"))}</li>`}</ul></section>
       <section><h3>${esc(t("actions"))}</h3>
@@ -512,6 +525,17 @@
   function bindCard(el) {
     const back = el.querySelector("#cardBack");
     if (back) back.addEventListener("click", () => { S.selected = null; S.detail = null; S.rendered.panel = null; renderTabs(); renderPanel(); updateMap(); });
+    const sev = el.querySelector("#sevToggle");
+    if (sev) sev.addEventListener("click", async () => {
+      sev.disabled = true;
+      try {
+        S.detail = await api(`/alerts/${S.selected}/status`, { json: { severity: sev.dataset.sev, role: "inspector", actor: ACTOR,
+          note: (el.querySelector("#actNote") || {}).value || "" } });
+        S.rendered.panel = null;
+        L$.toast(t("saved"));
+        await refresh();
+      } catch (e) { sev.disabled = false; L$.toast(e.message, true); }
+    });
     el.querySelectorAll("[data-act]").forEach((b) => b.addEventListener("click", async () => {
       const note = (el.querySelector("#actNote") || {}).value || "";
       const errEl = el.querySelector("#actErr");

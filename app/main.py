@@ -9,11 +9,12 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import analyze as analyze_mod
+from . import evidence as evidence_mod
 from .config import settings
 from .db import Database
 from .engine import PASSABLE, PLACE_TYPES, REPORT_HAZARDS, Engine, RuleError
@@ -37,6 +38,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
     views = Views(engine)
     guard = SpamGuard(db, settings, clock)
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
+    _restore_demo_clock(db)
 
     @contextlib.asynccontextmanager
     async def lifespan(_app):
@@ -139,6 +141,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         device_id: Optional[str] = Form(None),
         timestamp: Optional[str] = Form(None),
         channel: Optional[str] = Form(None),
+        registration_no: Optional[str] = Form(None),
     ):
         if passable not in PASSABLE:
             raise HTTPException(422, f"passable must be one of {PASSABLE}")
@@ -148,6 +151,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
             raise HTTPException(422, f"hazard must be one of {REPORT_HAZARDS}")
         if place_type is not None and place_type not in PLACE_TYPES:
             raise HTTPException(422, f"place_type must be one of {PLACE_TYPES}")
+        registration_no = (registration_no or "").strip()[:40] or None
         comment = (comment or "").strip()
         if len(comment) > 200:
             raise HTTPException(422, "comment is limited to 200 characters")
@@ -213,7 +217,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         rep = engine.ingest_report(
             {"lat": lat, "lon": lon, "passable": passable, "hazard": hazard, "place_type": place_type,
              "comment": comment, "device_id": device, "timestamp": timestamp}, analysis, name, chan,
-            photo_sha256=sha, photo_dhash=dhash, ip_hash=ip_h, reuse_of=reuse_of)
+            photo_sha256=sha, photo_dhash=dhash, ip_hash=ip_h, reuse_of=reuse_of, registration_no=registration_no)
         if rep["relevant"] == "reject" or rep["duplicate"] or rep["reuse_of"]:
             guard.strike(device)  # repeated rejects/duplicates -> sender muted for a day
         return {"report_id": rep["id"], "ticket": rep["ticket"], "relevant": rep["relevant"],
@@ -317,7 +321,8 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         return views.alert(a, role, detail=True)
 
     class StatusChange(BaseModel):
-        status: Literal["watch", "open", "done_reported", "verified", "reopened"]
+        status: Optional[Literal["watch", "cleared_in_time", "open", "done_reported", "verified", "reopened"]] = None
+        severity: Optional[Literal["act", "notice"]] = Field(None, description="inspector only")
         role: Literal["inspector", "contractor"]
         actor: str = ""
         contractor: Optional[str] = None
@@ -325,13 +330,38 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
 
     @app.post("/alerts/{alert_id}/status", tags=["alerts"])
     def change_status(alert_id: int, body: StatusChange):
+        """Change the status and/or (inspector) the severity; who and when go to status_history."""
+        if body.status is None and body.severity is None:
+            raise HTTPException(422, "status or severity is required")
+        if body.severity is not None and body.role != "inspector":
+            raise HTTPException(403, "only the inspector changes the severity")
         try:
-            a = engine.change_status(alert_id, body.status, body.role, body.actor, body.note, body.contractor)
+            a = None
+            if body.severity is not None:
+                a = engine.set_severity(alert_id, body.severity, body.actor, body.note if body.status is None else "")
+            if body.status is not None:
+                a = engine.change_status(alert_id, body.status, body.role, body.actor, body.note, body.contractor)
         except KeyError:
             raise HTTPException(404, "unknown alert")
         except RuleError as exc:
             raise HTTPException(409, str(exc))
         return views.alert(a, body.role, detail=True)
+
+    @app.get("/alerts/{alert_id}/evidence", tags=["inspector"], response_class=HTMLResponse)
+    def alert_evidence(alert_id: int, role: str = "inspector", format: Literal["html", "json"] = "html",
+                       lang: Literal["en", "lv"] = "en"):
+        """Evidence package: frame + time + place + history. Inspector only, never the contractor."""
+        if role != "inspector":
+            raise HTTPException(403, "inspector only")
+        a = engine.alert(alert_id)
+        if a is None:
+            raise HTTPException(404, "unknown alert")
+        ev = views.evidence(a)
+        if format == "json":
+            return JSONResponse(ev)
+        return HTMLResponse(evidence_mod.render(ev, settings.tile_url, settings.tile_attribution,
+                                                settings.images_credit, settings.source_url, lang),
+                            headers={"Cache-Control": "no-store"})
 
     @app.get("/inspection/today", tags=["inspector"])
     def inspection_today(limit: int = Query(10, ge=1, le=100)):
@@ -339,7 +369,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         return {"now": fmt_ts(clock.now()), "alerts": views.inspection_today(limit)}
 
     @app.get("/stats/response", tags=["inspector"])
-    def stats(within_hours: float = Query(6.0, gt=0)):
+    def stats(within_hours: Optional[float] = Query(None, gt=0, description="default FIX_HOURS (24)")):
         return views.response_stats(within_hours)
 
     @app.get("/export.geojson", tags=["export"])
@@ -352,48 +382,90 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         return PlainTextResponse(views.export_csv(), media_type="text/csv; charset=utf-8",
                                  headers={"Content-Disposition": 'attachment; filename="lantern_alerts.csv"'})
 
-    # ------------------------------------------------------------------ settings (demo controls)
+    # ------------------------------------------------------------------ snowfalls (deadline source)
+    class SnowfallIn(BaseModel):
+        start: Optional[str] = Field(None, description='ISO 8601 UTC or "now"')
+        end: Optional[str] = Field(None, description='ISO 8601 UTC, "now", or empty while it is still snowing')
+        source: str = Field("api", max_length=40)
+
+    @app.post("/snowfalls", status_code=201, tags=["deadline"])
+    def post_snowfall(body: SnowfallIn):
+        """End of a snowfall -> clearing deadline 08:00 / 22:00 Riga (regulation RD-24-270-sn)."""
+        try:
+            start = clock.now() if body.start == "now" else parse_ts(body.start)
+            end = clock.now() if body.end == "now" else parse_ts(body.end)
+            sf = engine.add_snowfall(start, end, body.source)
+        except (RuleError, ValueError) as exc:
+            raise HTTPException(422, str(exc))
+        return {**sf, "settings": engine.runtime_view()}
+
+    @app.get("/snowfalls", tags=["deadline"])
+    def list_snowfalls():
+        return [engine.snowfall_view(r) for r in db.q("SELECT * FROM snowfalls ORDER BY id DESC")]
+
     @app.get("/settings", tags=["inspector"])
     def get_settings():
         return engine.runtime_view()
 
-    class SettingsIn(BaseModel):
-        snowfall_end: Optional[str] = Field(None, description='ISO time, "now", or "" to clear')
-        hour_seconds: Optional[float] = Field(None, gt=0)
-        clearing_hours: Optional[float] = Field(None, ge=0)
-        clearing_seconds: Optional[float] = Field(None, gt=0, description="sets hour_seconds = this / clearing_hours")
+    # ------------------------------------------------------------------ demo controls
+    class DemoClockIn(BaseModel):
+        scenario_start: Optional[str] = Field(None, description="scenario time at real_start (ISO UTC); empty = real time")
+        real_start: Optional[str] = Field(None, description="real time the scenario starts (ISO UTC), default now")
+        factor: float = Field(1.0, gt=0, le=100000, description="scenario seconds per real second (1 h = 6 s -> 600)")
 
-    @app.post("/settings", tags=["inspector"])
-    def post_settings(body: SettingsIn):
-        fields = body.model_fields_set
-        hour = body.hour_seconds
-        if body.clearing_seconds is not None:
-            ch = body.clearing_hours if body.clearing_hours is not None else engine.runtime()["clearing_hours"]
-            if ch <= 0:
-                raise HTTPException(422, "clearing_hours must be > 0 to derive hour_seconds")
-            hour = body.clearing_seconds / ch
+    def _demo_only():
+        if not settings.demo_endpoints:
+            raise HTTPException(404, "demo endpoints are off (DEMO_ENDPOINTS=0)")
+
+    @app.post("/demo/clock", tags=["demo"])
+    def demo_clock(body: DemoClockIn):
+        """Demo only: accelerated clock. now = scenario_start + (real now - real_start) * factor."""
+        _demo_only()
         try:
-            if body.snowfall_end not in (None, "", "now"):
-                parse_ts(body.snowfall_end)
-            return engine.update_runtime(
-                snowfall_end=body.snowfall_end if "snowfall_end" in fields else ...,
-                hour_seconds=hour, clearing_hours=body.clearing_hours)
-        except (RuleError, ValueError) as exc:
+            if not body.scenario_start:
+                clock.reset()
+                db.run("DELETE FROM settings WHERE key = 'demo_clock'")
+            else:
+                clock.configure(parse_ts(body.scenario_start),
+                                parse_ts(body.real_start) if body.real_start else None, body.factor)
+                d = clock.describe()
+                db.run("INSERT INTO settings(key, value) VALUES('demo_clock', ?) ON CONFLICT(key) DO UPDATE SET "
+                       "value = excluded.value", (f"{d['scenario_start']}|{d['real_start']}|{d['factor']}",))
+        except ValueError as exc:
             raise HTTPException(422, str(exc))
+        engine.tick()
+        return engine.runtime_view()
 
-    @app.post("/admin/reset", tags=["inspector"])
-    def reset(keep_settings: bool = True):
-        """Demo only: wipe alerts, signals, reports and history. The snowfall end is cleared too
-        (a stale one would open every new alert at once); time compression is kept."""
+    @app.get("/demo/clock", tags=["demo"])
+    def get_demo_clock():
+        return clock.describe()
+
+    @app.post("/admin/reset", tags=["demo"])
+    def reset(keep_clock: bool = True):
+        """Demo only: wipe alerts, signals, reports, snowfalls and history (the demo clock is kept)."""
+        _demo_only()
         db.reset()
-        if keep_settings:
-            db.run("INSERT INTO settings(key, value) VALUES('snowfall_end', '') "
-                   "ON CONFLICT(key) DO UPDATE SET value = ''")
-        else:
-            db.run("DELETE FROM settings")
-        return {"ok": True}
+        if not keep_clock:
+            clock.reset()
+            db.run("DELETE FROM settings WHERE key = 'demo_clock'")
+        return {"ok": True, "settings": engine.runtime_view()}
 
     return app
+
+
+def _restore_demo_clock(db) -> None:
+    """Keep the demo clock across a server restart (a test that froze the clock is left alone)."""
+    if clock.describe()["mode"] == "frozen":
+        return
+    row = db.one("SELECT value FROM settings WHERE key = 'demo_clock'")
+    if row and row["value"]:
+        try:
+            start, real, factor = row["value"].split("|")
+            clock.configure(parse_ts(start), parse_ts(real), float(factor))
+        except ValueError:
+            pass
+    else:
+        clock.reset()
 
 
 app = build_app()

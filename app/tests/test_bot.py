@@ -71,7 +71,7 @@ def walk_report(bot, fake, chat, comment="Sniega valnis"):
 def test_report_through_bot_and_status_push(make_client, tmp_path):
     client, engine, clock, verdicts = make_client()
     clock.set(parse_ts("2026-11-25T12:00:00Z"))
-    client.post("/settings", json={"snowfall_end": "2026-11-25T05:00:00Z", "hour_seconds": 3600})
+    client.post("/snowfalls", json={"end": "2026-11-25T05:00:00Z"})
     bot, fake = make_bot(client, tmp_path)
 
     # /start and the language choice go through real long polling

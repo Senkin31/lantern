@@ -124,6 +124,7 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .st-open { color: #a3361f; background: rgba(214, 69, 69, .12); }
 .st-done_reported { color: #845a00; background: rgba(242, 169, 59, .2); }
 .st-verified { color: #24704b; background: rgba(62, 155, 107, .15); }
+.st-cleared_in_time { color: #3d7a5c; background: rgba(127, 184, 154, .16); }
 .st-reopened { color: #6d2f8a; background: rgba(142, 68, 173, .14); }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .st-watch { color: #c3cad3; }
@@ -143,6 +144,10 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .chip.warn { border-color: var(--medium); color: #8a5a00; background: rgba(232, 163, 61, .12); }
 .chip.alarm { border-color: var(--high); color: var(--high); background: rgba(214, 69, 69, .08); }
 .chip.purple { border-color: var(--reopened); color: var(--reopened); background: rgba(142, 68, 173, .08); }
+.chip.sev-act { border-color: #8e24aa; color: #8e24aa; background: rgba(142, 36, 170, .10); font-weight: 700; }
+.chip.sev-notice { border-color: var(--line); color: var(--muted); }
+.chip.overdue { border-color: #c62828; color: #fff; background: #c62828; font-weight: 700; }
+.sev-box { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .chip.warn { color: #ffc970; } }
 
 /* ---------------------------------------------------------------- inspector layout */
@@ -267,6 +272,7 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .job.u-low { border-left-color: var(--low); }
 .job .banner { background: rgba(142, 68, 173, .12); color: var(--reopened); font-weight: 700; padding: 8px 14px; font-size: 14px; }
 .job .banner.done { background: rgba(242, 169, 59, .18); color: #845a00; }
+.job .banner.overdue { background: #c62828; color: #fff; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .job .banner.done { color: #ffc970; } }
 .job .body { padding: 12px 14px 14px; display: grid; gap: 10px; }
 .job .top { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }

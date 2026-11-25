@@ -1,171 +1,269 @@
-"""Replays mock/signals.json + mock/reports.json with their original timestamps and
-checks the demo scenario from mock/README.md and the rules in brief v2."""
+"""The demo day 25.11 from brief v3 ("Моки v3 и сценарий демо"), replayed through the API
+on a frozen clock. Times in the comments are Riga time (UTC+2); the API gets UTC."""
+import io
 import json
+import random
 from datetime import timedelta
 
+from PIL import Image
+
+from app.rules import clearing_deadline
 from app.timeutil import parse_ts
 
-ZONE1, SQUARE, SIDEWALK = "mock_cam_1:crossing", "mock_cam_2:square", "mock_cam_2:sidewalk"
+CROSSING, SQUARE, SIDEWALK = "mock_cam_1:crossing", "mock_cam_2:square", "mock_cam_2:sidewalk"
+AT_CROSSING = (56.9498, 24.1052)   # inside the crossing polygon of mock_cam_1
+STOP = (56.9600, 24.1300)          # a bus stop without a camera
 
 
-def load_events(mock_dir):
-    sig = json.loads((mock_dir / "signals.json").read_text(encoding="utf-8"))
-    rep = json.loads((mock_dir / "reports.json").read_text(encoding="utf-8"))
-    events = [("signal", s) for s in sig["signals"]] + [("report", r) for r in rep["reports"]]
-    events.sort(key=lambda e: e[1]["timestamp"])
-    return sig["scenario"], events
+def photo(seed: int) -> bytes:
+    rnd = random.Random(seed)
+    im = Image.new("RGB", (64, 48))
+    im.putdata([(rnd.randrange(256), rnd.randrange(256), rnd.randrange(256)) for _ in range(64 * 48)])
+    buf = io.BytesIO()
+    im.save(buf, "JPEG")
+    return buf.getvalue()
 
 
-def send(client, mock_dir, kind, e):
-    body = {k: v for k, v in e.items() if not k.startswith("_")}
-    if kind == "signal":
-        r = client.post("/signals", json=body)
-    else:
-        photo = mock_dir / body.pop("photo")
-        r = client.post("/reports", data={k: str(v) for k, v in body.items()},
-                        files={"photo": (photo.name, photo.read_bytes(), "image/jpeg")})
-    assert r.status_code == 201, r.text
-    return r.json()
+def riga(hhmm: str, day: int = 25):
+    """'09:40' Riga on 25.11 -> UTC datetime."""
+    h, m = map(int, hhmm.split(":"))
+    return parse_ts(f"2026-11-{day:02d}T{h - 2:02d}:{m:02d}:00Z") if h >= 2 else \
+        parse_ts(f"2026-11-{day - 1:02d}T{h + 22:02d}:{m:02d}:00Z")
 
 
-def run_until(engine, clock, target, step=timedelta(minutes=10)):
-    """Advance the frozen clock to target, ticking like the background loop does."""
-    t = clock.now()
-    while t < target:
-        t = min(t + step, target)
-        clock.set(t)
-        engine.tick()
+def utc(dt):
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def zone_alerts(client, zone):
-    alerts = client.get("/alerts", params={"role": "inspector"}).json()["alerts"]
-    return [a for a in alerts if a["zone_id"] == zone]
+class Day:
+    def __init__(self, client, engine, clock, verdicts):
+        self.client, self.engine, self.clock, self.verdicts = client, engine, clock, verdicts
+
+    def at(self, hhmm):
+        """Move the clock forward to hhmm (Riga), ticking every 10 minutes like the background loop."""
+        target = riga(hhmm)
+        t = self.clock.now()
+        while t < target:
+            t = min(t + timedelta(minutes=10), target)
+            self.clock.set(t)
+            self.engine.tick()
+
+    def signal(self, zone, cls, share, conf=0.85):
+        cam = zone.split(":")[0]
+        stamp = utc(self.clock.now()).replace("-", "").replace(":", "")[:13] + "Z"
+        r = self.client.post("/signals", json={
+            "source": "camera", "camera_id": cam, "zone_id": zone, "lat": 56.95, "lon": 24.11,
+            "timestamp": utc(self.clock.now()), "hazard_class": cls, "blocked_share": share, "confidence": conf,
+            "frame_url": f"http://localhost:8001/media/frames/{cam}/{stamp}.jpg",
+            "crop_url": f"/static/crops/{cam}/{stamp}_{zone.split(':')[1]}.jpg"})
+        assert r.status_code == 201, r.text
+        return r.json()["alert_id"]
+
+    def report(self, device, where, passable, seed, name="p.jpg", place="crossing", **extra):
+        r = self.client.post("/reports", data={"lat": where[0], "lon": where[1], "passable": passable,
+                                               "device_id": device, "place_type": place,
+                                               "timestamp": utc(self.clock.now()), **extra},
+                             files={"photo": (name, photo(seed), "image/jpeg")})
+        assert r.status_code == 201, r.text
+        return r.json()
+
+    def alert(self, alert_id, role="inspector", **kw):
+        return self.client.get(f"/alerts/{alert_id}", params={"role": role, **kw}).json()
 
 
-def contractor_alerts(client, contractor):
-    return client.get("/alerts", params={"role": "contractor", "contractor": contractor}).json()["alerts"]
+def test_deadline_rule_riga_time():
+    d = lambda end, seen=None: clearing_deadline(parse_ts(end) if end else None, parse_ts(seen) if seen else None)
+    assert d("2026-11-25T01:00:00Z") == riga("08:00")               # ended 03:00 -> 08:00
+    assert d("2026-11-25T12:00:00Z") == riga("22:00")               # ended 14:00 -> 22:00
+    assert d("2026-11-25T05:59:00Z") == riga("08:00")               # 07:59 -> 08:00
+    assert d("2026-11-25T06:00:00Z") == riga("22:00")               # 08:00 sharp -> 22:00
+    assert d("2026-11-25T21:30:00Z") == riga("08:00", day=26)       # 23:30 -> 08:00 next day
+    assert d(None, "2026-11-25T07:00:00Z") == riga("08:00")         # unknown -> 08:00 of the day seen
+    # summer time: Riga is UTC+3, 08:00 Riga = 05:00 UTC
+    assert d("2026-07-01T02:00:00Z") == parse_ts("2026-07-01T05:00:00Z")
 
 
-def test_full_demo_day(make_client, mock_dir):
-    client, engine, clock, verdicts = make_client()
-    verdicts["report_irrelevant.jpg"] = "reject"
-    scenario, events = load_events(mock_dir)
-    clock.set(parse_ts(events[0][1]["timestamp"]) - timedelta(minutes=1))
-    r = client.post("/settings", json={"snowfall_end": scenario["snowfall_end"], "hour_seconds": 3600,
-                                       "clearing_hours": scenario["clearing_hours"]})
-    assert r.status_code == 200 and r.json()["deadline"] == "2026-11-25T11:00:00Z"
+def test_demo_day_25_11(make_client, mock_dir):
+    day = Day(*make_client())
+    c = day.client
+    day.clock.set(riga("07:00"))
+    # 03:00 snowfall 1 ended (the script sends it at 07:00, at the start) -> deadline 08:00
+    sf = c.post("/snowfalls", json={"start": utc(riga("23:00", day=24)), "end": utc(riga("03:00"))}).json()
+    assert sf["deadline_at"] == utc(riga("08:00"))
 
-    results = {}
-    done_at = parse_ts("2026-11-25T13:30:00Z")
-    done_sent = False
-    snapshots = {}
-    for kind, e in events:
-        ts = parse_ts(e["timestamp"])
-        if not done_sent and ts > done_at:
-            run_until(engine, clock, done_at)
-            snapshots["before_done"] = zone_alerts(client, ZONE1)[-1]
-            aid = snapshots["before_done"]["id"]
-            # the wrong contractor cannot close it
-            bad = client.post(f"/alerts/{aid}/status", json={"status": "done_reported", "role": "contractor",
-                                                             "contractor": "B"})
-            assert bad.status_code == 409
-            ok = client.post(f"/alerts/{aid}/status", json={"status": "done_reported", "role": "contractor",
-                                                            "contractor": "A", "actor": "crew 1"})
-            assert ok.status_code == 200, ok.text
-            done_sent = True
-        run_until(engine, clock, ts)
-        results[(kind, e["timestamp"], e.get("zone_id") or e.get("device_id"))] = send(client, mock_dir, kind, e)
-        if kind == "signal" and e["timestamp"] == "2026-11-25T10:00:00Z":
-            # before the deadline everything is watch and the contractor sees nothing
-            assert contractor_alerts(client, "A") == [] and contractor_alerts(client, "B") == []
-            a1 = zone_alerts(client, ZONE1)[-1]
-            assert a1["status"] == "watch"
-            assert "possible_ice" not in a1["inspector_flags"]  # 06:00 snow replaced the 04:30 ice state
-        if kind == "report" and e["device_id"] == "dev-001":
-            a1 = zone_alerts(client, ZONE1)[-1]
-            assert a1["report_count"] == 1
-        if kind == "signal" and e["timestamp"] == "2026-11-25T11:30:00Z":
-            a1 = zone_alerts(client, ZONE1)[-1]
-            assert a1["status"] == "open" and a1["contractor_id"] == "A"
-            assert a1["opened_at"] == "2026-11-25T11:00:00Z"
-            ids_a = [a["id"] for a in contractor_alerts(client, "A")]
-            assert a1["id"] in ids_a
-        if kind == "signal" and e["timestamp"] == "2026-11-25T14:30:00Z":
-            a1 = zone_alerts(client, ZONE1)[-1]
-            assert a1["status"] == "reopened" and a1["reopened_count"] == 1 and a1["flagged_for_council"]
-    run_until(engine, clock, parse_ts("2026-11-25T21:00:00Z"))
+    # 08:00 deadline passes; cameras are silent (dark)
+    day.at("09:00")
+    crossing = day.signal(CROSSING, "blocked", 0.8, 0.86)        # wall of snow on the crossing
+    square = day.signal(SQUARE, "snow", 0.4, 0.8)                # partly cleared
+    assert day.signal(SIDEWALK, "clear", 0.05, 0.9) is None       # clean -> no alert
+    a = day.alert(crossing)
+    assert a["status"] == "open" and a["severity"] == "act" and a["contractor_id"] == "A"
+    assert [h["to_status"] for h in a["history"]] == ["open"]     # straight to open, no watch step
+    assert a["deadline_at"] == utc(riga("08:00")) and a["notified_at"] == utc(riga("09:00"))
+    assert a["fix_due_at"] == utc(riga("09:00", day=26))          # 24 h to fix
+    s = day.alert(square)
+    assert s["status"] == "open" and s["severity"] == "notice" and s["contractor_id"] == "B"
 
-    # 04:30 possible_ice went straight to the inspector
-    first = results[("signal", "2026-11-25T04:30:00Z", ZONE1)]
-    assert first["alert_id"] is not None
+    day.at("09:40")  # "impassable" next to the crossing -> joins, high
+    r1 = day.report("dev-1", AT_CROSSING, "no", 1)
+    assert r1["alert_id"] == crossing and day.alert(crossing)["urgency_level"] == "high"
 
-    # mock_cam_1:crossing: watch -> open -> done_reported -> reopened -> verified
-    a1 = zone_alerts(client, ZONE1)
-    assert len(a1) == 1
-    d1 = client.get(f"/alerts/{a1[0]['id']}", params={"role": "inspector"}).json()
-    path = [h["to_status"] for h in d1["history"]]
-    assert path == ["watch", "open", "done_reported", "reopened", "verified"], path
-    assert d1["status"] == "verified" and d1["verified_at"] == "2026-11-25T17:00:00Z"
-    assert d1["response_hours"] == 6.0  # 11:00 -> 17:00
-    assert d1["urgency_level"] == "high"
-    assert d1["report_count"] == 2  # two residents merged into the camera alert (<30 m)
-    assert {r["passable"] for r in d1["reports"]} == {"no", "partly"}
-    assert d1["before_frame_url"] and d1["after_frame_url"] and d1["before_frame_url"] != d1["after_frame_url"]
+    day.at("10:15")  # a stop without a camera -> new alert, at most medium, on the check list
+    r2 = day.report("dev-2", STOP, "no", 2, place="stop", registration_no="RD-2026/123")
+    stop = day.alert(r2["alert_id"])
+    assert r2["alert_id"] not in (crossing, square) and stop["urgency_level"] == "medium"
+    assert stop["registration_nos"] == ["RD-2026/123"]
+    today = c.get("/inspection/today").json()["alerts"]
+    assert "no_camera" in next(x for x in today if x["id"] == stop["id"])["why"]
 
-    # mock_cam_2:sidewalk cleared in time -> never dispatched
-    side = zone_alerts(client, SIDEWALK)
-    assert len(side) == 1 and side[0]["status"] == "verified" and side[0]["opened_at"] is None
-    assert all(a["zone_id"] != SIDEWALK for a in contractor_alerts(client, "B"))
+    day.at("11:00")  # off-topic photo -> /analyze reject, never an alert
+    day.verdicts["cat.jpg"] = "reject"
+    r3 = day.report("dev-3", AT_CROSSING, "no", 3, name="cat.jpg")
+    assert r3["relevant"] == "reject" and r3["alert_id"] is None
 
-    # mock_cam_2:square: open for B, verified at 18:00; 20:30 night frame is a new inspector-only alert
-    sq = zone_alerts(client, SQUARE)
-    assert len(sq) == 2
-    assert sq[0]["status"] == "verified" and sq[0]["contractor_id"] == "B" and sq[0]["opened_at"]
-    assert sq[1]["status"] == "watch" and "low_confidence" in sq[1]["inspector_flags"]
-    b_ids = [a["id"] for a in contractor_alerts(client, "B")]
-    assert sq[0]["id"] in b_ids and sq[1]["id"] not in b_ids
+    day.at("11:30")  # contractor A presses "done" on the crossing
+    r = c.post(f"/alerts/{crossing}/status", json={"status": "done_reported", "role": "contractor", "contractor": "A"})
+    assert r.status_code == 200 and r.json()["status"] == "done_reported"
 
-    # bus-stop report: own alert, no camera, capped at medium, goes to B by nearest camera
-    alerts = client.get("/alerts", params={"role": "inspector"}).json()["alerts"]
-    stop = [a for a in alerts if a["zone_id"] is None]
-    assert len(stop) == 1
-    assert stop[0]["place_type"] == "stop" and stop[0]["urgency_level"] == "medium"
-    assert stop[0]["district"] == "demo-north" and stop[0]["status"] == "open"
-    assert stop[0]["urgency_score"] == 4  # "no" 3 + stop 1; one unconfirmed report never exceeds medium
+    day.at("11:50")  # second complaint at the crossing, another phone -> +1 confirmation
+    day.report("dev-4", AT_CROSSING, "partly", 4)
+    assert day.alert(crossing)["report_count"] == 2
 
-    # irrelevant photo -> stored as reject, no alert
-    rejected = client.get("/reports", params={"role": "inspector", "relevant": "reject"}).json()
-    assert len(rejected) == 1 and rejected[0]["alert_id"] is None
+    day.at("12:00")  # crossing: snow still there -> reopened, flagged for the council
+    day.signal(CROSSING, "snow", 0.7, 0.82)
+    a = day.alert(crossing)
+    assert a["status"] == "reopened" and a["flagged_for_council"] and a["reopened_count"] == 1
 
-    # privacy: the contractor's raw JSON never contains full frames or device ids
-    for c in ("A", "B"):
-        raw = client.get("/alerts", params={"role": "contractor", "contractor": c}).text
-        assert "frame_url" not in raw and "/frames/" not in raw and "dev-00" not in raw
-        for a in contractor_alerts(client, c):
-            det = client.get(f"/alerts/{a['id']}", params={"role": "contractor", "contractor": c}).text
-            assert "frame_url" not in det and "/frames/" not in det and "dev-00" not in det
-    # and cannot open another district's alert
-    assert client.get(f"/alerts/{a1[0]['id']}", params={"role": "contractor", "contractor": "B"}).status_code == 404
+    day.at("13:30")  # square: clean, nobody pressed "done" -> verified anyway
+    day.signal(SQUARE, "clear", 0.05, 0.9)
+    assert day.alert(square)["status"] == "verified"
 
-    # response stats
-    st = client.get("/stats/response").json()
-    by = {r["id"]: r for r in st["by_contractor"]}
-    assert by["A"]["verified"] == 1 and by["A"]["reopened_times"] == 1
-    assert by["A"]["avg_response_hours"] == 6.0
-    assert by["B"]["opened"] == 2  # square + bus stop
+    day.at("14:00")  # snowfall 2 (13:00-14:00) -> new deadline 22:00; crossing clean -> verified in 5 h
+    sf2 = c.post("/snowfalls", json={"start": utc(riga("13:00")), "end": utc(riga("14:00"))}).json()
+    assert sf2["deadline_at"] == utc(riga("22:00"))
+    day.signal(CROSSING, "clear", 0.03, 0.91)
+    a = day.alert(crossing)
+    assert a["status"] == "verified" and a["response_hours"] == 5 and not a["overdue"]
 
-    # open-data exports
-    gj = client.get("/export.geojson").json()
-    assert gj["type"] == "FeatureCollection" and len(gj["features"]) == len(alerts)
-    assert "frame_url" not in json.dumps(gj)
-    csv = client.get("/export.csv").text.splitlines()
-    assert csv[0].startswith("id,status") and len(csv) == len(alerts) + 1
+    day.at("14:30")  # sidewalk: snow after snowfall 2 -> watch, the contractor does not see it
+    sidewalk = day.signal(SIDEWALK, "snow", 0.4, 0.8)
+    w = day.alert(sidewalk)
+    assert w["status"] == "watch" and w["deadline_at"] == utc(riga("22:00"))
+    contractor_ids = {x["id"] for x in c.get("/alerts", params={"role": "contractor", "contractor": "B"}).json()["alerts"]}
+    assert sidewalk not in contractor_ids and square in contractor_ids
+
+    day.at("15:30")  # sidewalk clean before 22:00 -> cleared_in_time
+    day.signal(SIDEWALK, "clear", 0.02, 0.9)
+    assert day.alert(sidewalk)["status"] == "cleared_in_time"
+    day.at("23:00")  # nothing reopens after the deadline: it is closed
+    assert day.alert(sidewalk)["status"] == "cleared_in_time"
+
+    # --- response stats per contractor: average, share within 24 h, reopened
+    st = {x["id"]: x for x in c.get("/stats/response").json()["by_contractor"]}
+    assert st["A"]["avg_response_hours"] == 5 and st["A"]["share_within"] == 1 and st["A"]["reopened_times"] == 1
+    assert st["B"]["avg_response_hours"] == 4.5
+
+    # --- evidence package: inspector only; frames after the deadline with Riga time, no device ids
+    ev = c.get(f"/alerts/{crossing}/evidence", params={"format": "json"}).json()
+    labels = [f["label"] for f in ev["frames"]]
+    assert labels == ["first_snow_after_deadline", "last_snow", "clear"]
+    assert ev["frames"][0]["riga_time"] == "25.11.2026 09:00" and ev["deadline"]["riga_time"] == "25.11.2026 08:00"
+    assert len(ev["resident_photos"]) == 2 and "dev-1" not in json.dumps(ev)
+    html = c.get(f"/alerts/{crossing}/evidence")
+    assert html.status_code == 200 and "localhost:8001/media/frames" in html.text and "dev-1" not in html.text
+    assert c.get(f"/alerts/{crossing}/evidence", params={"role": "contractor"}).status_code == 403
+
+    # --- privacy: the contractor never gets full frames or the evidence link
+    job = day.alert(crossing, role="contractor", contractor="A")
+    dumped = json.dumps(job)
+
+    def keys(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                yield k
+                yield from keys(v)
+        elif isinstance(o, list):
+            for v in o:
+                yield from keys(v)
+
+    leaked = {k for k in keys(job) if "frame" in k or k in ("evidence", "evidence_url", "device")}
+    assert not leaked, leaked
+    assert "localhost:8001/media/frames" not in dumped and "dev-" not in dumped
+    assert job["severity"] == "act" and job["fix_due_at"]
+
+
+def test_overdue_and_severity_override(make_client, mock_dir):
+    day = Day(*make_client())
+    c = day.client
+    day.clock.set(riga("09:00"))   # no snowfall known -> deadline 08:00 of today, already passed
+    sq = day.signal(SQUARE, "snow", 0.4, 0.8)
+    a = day.alert(sq)
+    assert a["status"] == "open" and a["severity"] == "notice" and a["snowfall_id"] is None
+    r = c.post(f"/alerts/{sq}/status", json={"severity": "act", "role": "inspector", "actor": "anna"})
+    assert r.status_code == 200 and r.json()["severity"] == "act" and r.json()["severity_manual"] == "act"
+    assert "severity notice -> act" in r.json()["history"][-1]["note"]
+    assert c.post(f"/alerts/{sq}/status", json={"severity": "notice", "role": "contractor",
+                                                "contractor": "B"}).status_code == 403
+    day.signal(SQUARE, "snow", 0.35, 0.8)  # a new signal must not undo the inspector's choice
+    assert day.alert(sq)["severity"] == "act"
+
+    day.at("09:01")
+    day.clock.set(riga("09:30", day=26))  # 24 h later, still not verified
+    a = day.alert(sq)
+    assert a["overdue"]
+    today = c.get("/inspection/today").json()["alerts"]
+    assert today[0]["id"] == sq and today[0]["why"][:2] == ["act", "overdue"]
+    assert c.get("/stats/response").json()["by_contractor"][0]["overdue"] == 1
+
+
+def test_two_zones_of_one_camera_make_an_act(make_client, mock_dir):
+    day = Day(*make_client())
+    day.clock.set(riga("09:00"))
+    sq = day.signal(SQUARE, "snow", 0.4, 0.8)
+    assert day.alert(sq)["severity"] == "notice"
+    day.signal(SIDEWALK, "snow", 0.4, 0.8)   # neighbouring zone of mock_cam_2 also has snow
+    assert day.alert(sq)["severity"] == "act"
+
+
+def test_watch_waits_for_deadline_and_ongoing_snowfall(make_client, mock_dir):
+    day = Day(*make_client())
+    c = day.client
+    day.clock.set(riga("06:00"))
+    c.post("/snowfalls", json={"start": utc(riga("01:00")), "end": utc(riga("05:00"))})
+    al = day.signal(SQUARE, "snow", 0.4, 0.8)
+    assert day.alert(al)["status"] == "watch"
+    assert al not in {x["id"] for x in c.get("/alerts", params={"role": "contractor", "contractor": "B"}).json()["alerts"]}
+    day.at("07:00")
+    c.post("/snowfalls", json={"start": utc(riga("07:00"))})   # it starts snowing again, end unknown
+    day.at("09:00")
+    assert day.alert(al)["status"] == "watch" and day.alert(al)["deadline_at"] is None
+    c.post("/snowfalls", json={"start": utc(riga("07:00")), "end": utc(riga("09:00"))})  # ended 09:00 -> 22:00
+    assert day.alert(al)["deadline_at"] == utc(riga("22:00"))
+    day.at("22:10")  # background tick opens it after the deadline, no new signal needed
+    a = day.alert(al)
+    assert a["status"] == "open" and a["notified_at"] == utc(riga("22:00"))  # the tick right at 22:00
+    assert a["notify_seconds"] == 0  # KPI 2: notified_at - max(detected_at, deadline_at)
+    assert c.get(f"/alerts/{al}/evidence", params={"format": "json"}).json()["frames"] == []  # last frame 06:00
+
+
+def test_demo_clock_runs_fast(make_client):
+    import time
+    client, engine, clock, _ = make_client()
+    clock.set(None)
+    r = client.post("/demo/clock", json={"scenario_start": "2026-11-25T05:00:00Z", "factor": 600})
+    assert r.status_code == 200 and r.json()["clock"]["mode"] == "demo"
+    t0 = parse_ts(client.get("/demo/clock").json()["now"])
+    time.sleep(1.1)
+    t1 = parse_ts(client.get("/demo/clock").json()["now"])
+    assert 500 <= (t1 - t0).total_seconds() <= 1500      # ~600 scenario seconds per real second
+    assert client.post("/demo/clock", json={}).json()["clock"]["mode"] == "real"
+    clock.reset()
 
 
 def test_one_device_one_vote_and_review(make_client, mock_dir):
     client, engine, clock, verdicts = make_client()
     clock.set(parse_ts("2026-11-25T12:00:00Z"))
-    client.post("/settings", json={"snowfall_end": "2026-11-25T05:00:00Z", "hour_seconds": 3600})
+    client.post("/snowfalls", json={"end": "2026-11-25T05:00:00Z"})
     photos = {p.name: p.read_bytes() for p in (mock_dir / "photos").glob("report_*.jpg")}
 
     def report(device, passable="no", name="a.jpg", lat=56.9600, lon=24.1300, photo="report_snow_1.jpg"):
@@ -190,7 +288,6 @@ def test_one_device_one_vote_and_review(make_client, mock_dir):
     assert a["report_count"] == 2 and "review_report" not in a["inspector_flags"]
     assert a["urgency_score"] == 3 + 1  # passable=no + one confirmation
 
-    # ticket status for the resident
     t = client.get(f"/reports/ticket/{r1['ticket']}").json()
     assert t["state"] == "accepted" and t["alert_status"] == "open" and t["other_reports"] == 1
 
@@ -207,7 +304,12 @@ def test_validation(make_client, mock_dir):
     bad = client.post("/reports", data={"lat": 56.9, "lon": 24.1, "passable": "no"},
                       files={"photo": ("a.txt", b"123", "text/plain")})
     assert bad.status_code == 415
-    clear = client.post("/signals", json={"camera_id": "mock_cam_1", "zone_id": ZONE1, "lat": 1, "lon": 1,
+    clear = client.post("/signals", json={"camera_id": "mock_cam_1", "zone_id": CROSSING, "lat": 1, "lon": 1,
                                           "timestamp": "2026-11-25T10:00:00Z", "hazard_class": "clear",
                                           "blocked_share": 0, "confidence": 0.9})
     assert clear.status_code == 201 and clear.json() == {"alert_id": None}
+    assert client.post("/snowfalls", json={}).status_code == 422
+    assert client.post("/snowfalls", json={"start": "2026-11-25T10:00:00Z",
+                                           "end": "2026-11-25T09:00:00Z"}).status_code == 422
+    exp = client.get("/export.geojson").json()
+    assert exp["type"] == "FeatureCollection"

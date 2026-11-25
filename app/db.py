@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS alerts (
     polygon          TEXT,               -- JSON [[lon, lat], ...] or NULL
     place_type       TEXT,
     near_sensitive   INTEGER NOT NULL DEFAULT 0,
-    status           TEXT NOT NULL,      -- watch | open | done_reported | verified | reopened
+    status           TEXT NOT NULL,      -- watch | cleared_in_time | open | done_reported | verified | reopened
     urgency_score    INTEGER NOT NULL DEFAULT 0,
     urgency_level    TEXT NOT NULL DEFAULT 'low',
     urgency_reasons  TEXT,               -- JSON list
@@ -28,6 +28,13 @@ CREATE TABLE IF NOT EXISTS alerts (
     notified_at      TEXT,
     done_reported_at TEXT,
     verified_at      TEXT,
+    deadline_at      TEXT,               -- clearing deadline (08:00 / 22:00 Riga, stored in UTC)
+    snowfall_id      INTEGER,            -- snowfall the deadline was counted from (NULL = unknown)
+    fix_due_at       TEXT,               -- notified_at + 24 h
+    severity         TEXT,               -- act | notice (in effect)
+    severity_suggested TEXT,             -- what the rules suggest
+    severity_manual  TEXT,               -- inspector override, NULL = follow the suggestion
+    severity_reason  TEXT,
     reopened_count   INTEGER NOT NULL DEFAULT 0,
     flagged_for_council INTEGER NOT NULL DEFAULT 0,
     created_at       TEXT NOT NULL,
@@ -79,7 +86,8 @@ CREATE TABLE IF NOT EXISTS reports (
     photo_sha256  TEXT,                  -- spam: exact copy
     photo_dhash   TEXT,                  -- spam: near copy (64-bit difference hash)
     ip_hash       TEXT,                  -- spam: salted hash, never the raw IP
-    reuse_of      INTEGER                -- same photo as this earlier report
+    reuse_of      INTEGER,               -- same photo as this earlier report
+    registration_no TEXT                 -- council registration number of a formal complaint (optional)
 );
 CREATE INDEX IF NOT EXISTS idx_reports_alert ON reports(alert_id);
 
@@ -111,6 +119,14 @@ CREATE TABLE IF NOT EXISTS spam_events (  -- refused attempts (no photo kept)
 );
 CREATE INDEX IF NOT EXISTS idx_spam_at ON spam_events(at);
 
+CREATE TABLE IF NOT EXISTS snowfalls (    -- POST /snowfalls; the end sets the clearing deadline
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    start      TEXT,
+    end        TEXT,                    -- NULL = still snowing
+    source     TEXT,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -138,7 +154,12 @@ class Database:
 
     # columns added after the first release; ALTER keeps existing databases working
     MIGRATIONS = (("reports", "photo_sha256", "TEXT"), ("reports", "photo_dhash", "TEXT"),
-                  ("reports", "ip_hash", "TEXT"), ("reports", "reuse_of", "INTEGER"))
+                  ("reports", "ip_hash", "TEXT"), ("reports", "reuse_of", "INTEGER"),
+                  ("reports", "registration_no", "TEXT"),
+                  ("alerts", "deadline_at", "TEXT"), ("alerts", "snowfall_id", "INTEGER"),
+                  ("alerts", "fix_due_at", "TEXT"), ("alerts", "severity", "TEXT"),
+                  ("alerts", "severity_suggested", "TEXT"), ("alerts", "severity_manual", "TEXT"),
+                  ("alerts", "severity_reason", "TEXT"))
 
     def _migrate(self, conn) -> None:
         for table, col, typ in self.MIGRATIONS:
@@ -152,7 +173,7 @@ class Database:
         with self.lock:
             self.conn.executescript(
                 "DROP TABLE IF EXISTS status_history; DROP TABLE IF EXISTS signals;"
-                "DROP TABLE IF EXISTS spam_events; DROP TABLE IF EXISTS devices;"
+                "DROP TABLE IF EXISTS spam_events; DROP TABLE IF EXISTS devices; DROP TABLE IF EXISTS snowfalls;"
                 "DROP TABLE IF EXISTS reports; DROP TABLE IF EXISTS alerts;")
             self.conn.executescript(SCHEMA)
             self._migrate(self.conn)

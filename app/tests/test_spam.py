@@ -26,7 +26,7 @@ def make_photo(seed: int) -> bytes:
 def setup(make_client, monkeypatch):
     client, engine, clock, verdicts = make_client()
     clock.set(parse_ts("2026-11-25T12:00:00Z"))
-    client.post("/settings", json={"snowfall_end": "2026-11-25T05:00:00Z", "hour_seconds": 3600})
+    client.post("/snowfalls", json={"end": "2026-11-25T05:00:00Z"})
     calls = []
     real = analyze_mod.analyze  # the conftest fake
 

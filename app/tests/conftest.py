@@ -11,10 +11,7 @@ _tmp = tempfile.mkdtemp(prefix="lantern_test_")
 os.environ["APP_DB"] = str(Path(_tmp) / "import.db")
 os.environ["UPLOAD_DIR"] = str(Path(_tmp) / "uploads")
 os.environ["ANALYZE_URL"] = ""
-os.environ["SNOWFALL_END"] = ""
 os.environ["TRUSTED_HOSTS"] = "127.0.0.1,::1,testclient"
-os.environ["CLEARING_SECONDS"] = ""
-os.environ["HOUR_SECONDS"] = ""
 
 MOCK = ROOT / "mock"
 
@@ -47,4 +44,4 @@ def make_client(tmp_path, monkeypatch):
         return TestClient(app), app.state.engine, clock, verdicts
 
     yield factory
-    clock.set(None)
+    clock.reset()

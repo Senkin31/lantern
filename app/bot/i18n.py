@@ -179,6 +179,8 @@ T = {
     "st_reopened": {"lv": "joprojām nav notīrīts — atkārtoti nosūtīts", "en": "still not cleared — sent back again",
                     "ru": "всё ещё не убрано — отправлено повторно"},
     "st_verified": {"lv": "notīrīts un pārbaudīts ✅", "en": "cleared and verified ✅", "ru": "убрано и проверено ✅"},
+    "st_cleared_in_time": {"lv": "notīrīts laikā, pirms termiņa ✅", "en": "cleared in time, before the deadline ✅",
+                           "ru": "убрано вовремя, до срока ✅"},
     "others": {"lv": "vēl {n} iedzīvotāji ziņoja", "en": "{n} other residents reported it",
                "ru": "ещё {n} жителей сообщили"},
     "camera": {"lv": "apstiprina pilsētas kamera", "en": "confirmed by a city camera",
@@ -198,6 +200,11 @@ T = {
         "lv": "⚠️ {ticket}: pārbaude rāda, ka vieta joprojām nav notīrīta — pieteikums atkārtoti nosūtīts.",
         "en": "⚠️ {ticket}: the check shows the place is still not cleared — the ticket was sent back.",
         "ru": "⚠️ {ticket}: проверка показала, что место всё ещё не убрано — заявка отправлена повторно.",
+    },
+    "push_cleared_in_time": {
+        "lv": "✅ {ticket}: vieta notīrīta laikā, pirms tīrīšanas termiņa. Paldies, ka ziņoji!",
+        "en": "✅ {ticket}: the place was cleared in time, before the clearing deadline. Thanks for reporting!",
+        "ru": "✅ {ticket}: место убрали вовремя, до срока уборки. Спасибо, что сообщили!",
     },
     "push_verified": {
         "lv": "✅ {ticket}: vieta notīrīta un pārbaudīta. Paldies, tu palīdzēji kaimiņiem!",

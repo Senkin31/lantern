@@ -20,7 +20,7 @@
     const known = (S.meta.contractors || []).map((c) => c.id);
     if (!S.contractor || !known.includes(S.contractor)) S.contractor = known[0] || null;
     if (S.contractor && params.get("contractor") !== S.contractor) history.replaceState(null, "", "/contractor?contractor=" + encodeURIComponent(S.contractor));
-    L$.setHourSeconds(S.meta.settings.hour_seconds);
+    L$.syncFromSettings(S.meta.settings);
     chrome();
     document.addEventListener("lantern:lang", () => { S.lastHTML = ""; chrome(); render(); });
     await refresh();
@@ -38,8 +38,7 @@
     if (!S.contractor) { $("#main").innerHTML = `<div class="empty">${esc(t("pickContractor"))}</div>`; return; }
     try {
       const res = await api("/alerts?role=contractor&contractor=" + encodeURIComponent(S.contractor));
-      L$.syncClock(res.now);
-      L$.setHourSeconds(res.settings.hour_seconds);
+      L$.syncFromSettings(res.settings);
       S.alerts = res.alerts;
       render();
     } catch (e) { console.warn("refresh failed", e); }
@@ -49,7 +48,9 @@
     const todo = S.alerts.filter((a) => a.status === "open" || a.status === "reopened");
     const waiting = S.alerts.filter((a) => a.status === "done_reported");
     const done = S.alerts.filter((a) => a.status === "verified");
-    todo.sort((a, b) => (b.status === "reopened") - (a.status === "reopened") || (b.urgency_score - a.urgency_score)
+    // overdue first, then defect acts, then reopened, then urgency
+    todo.sort((a, b) => (b.overdue - a.overdue) || ((b.severity === "act") - (a.severity === "act"))
+      || (b.status === "reopened") - (a.status === "reopened") || (b.urgency_score - a.urgency_score)
       || (URG[a.urgency_level] - URG[b.urgency_level]) || (new Date(a.opened_at) - new Date(b.opened_at)));
     waiting.sort((a, b) => new Date(b.done_reported_at) - new Date(a.done_reported_at));
     done.sort((a, b) => new Date(b.verified_at) - new Date(a.verified_at));
@@ -60,12 +61,15 @@
   function geo(a) { return `geo:${a.lat},${a.lon}?q=${a.lat},${a.lon}`; }
 
   function jobHTML(a) {
-    const banner = a.status === "reopened" ? `<div class="banner">↻ ${esc(t("redo"))}</div>`
-      : a.status === "done_reported" ? `<div class="banner done">⏳ ${esc(t("waitingCheck"))}</div>` : "";
+    const banner = (a.overdue ? `<div class="banner overdue">⚠ ${esc(t("overdueJob"))}</div>` : "")
+      + (a.status === "reopened" ? `<div class="banner">↻ ${esc(t("redo"))}</div>`
+        : a.status === "done_reported" ? `<div class="banner done">⏳ ${esc(t("waitingCheck"))}</div>` : "");
+    const open = a.status !== "verified";
     const photos = (a.report_photos || []).map((p) => `<img src="${esc(p)}" data-zoom="${esc(p)}" alt="${esc(t("residentPhotos"))}" loading="lazy">`).join("");
     const canClear = a.status === "open" || a.status === "reopened";
     const facts = [
-      a.status === "verified" ? "" : `${esc(t("sinceOpened"))}: <b>${L$.sinceSpan(a.opened_at)}</b>`,
+      open && a.fix_due_at ? `${esc(t("fixDue"))}: <b style="${a.overdue ? "color:var(--high)" : ""}">${esc(L$.fmtTime(a.fix_due_at))}</b>` : "",
+      a.status === "verified" ? "" : `${esc(t("sinceOpened"))}: <b>${L$.sinceSpan(a.notified_at || a.opened_at)}</b>`,
       `${esc(t("complaints"))}: <b>${a.report_count}</b>`,
       a.status === "verified" ? `${esc(t("verifiedAt"))}: <b>${esc(L$.fmtTime(a.verified_at))}</b>` : "",
       a.status === "verified" && a.response_hours != null ? `${esc(t("responseTime"))}: <b>${L$.hours(a.response_hours)} ${esc(t("h"))}</b>` : "",
@@ -78,6 +82,7 @@
             <div class="muted small">${esc(a.district || "")}${a.hazard_now && a.hazard_now !== "reported" ? ` · ${esc(L$.hazard(a.hazard_now))}` : ""}</div></div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">${L$.levelBadge(a.urgency_level, a.status)}${L$.statusBadge(a.status)}</div>
         </div>
+        ${open ? `<div class="sev-box">${L$.severityBadge(a)}<span class="muted small">${esc(t(a.severity === "act" ? "actJob" : "noticeJob"))}</span></div>` : ""}
         ${a.latest_crop_url ? `<figure style="margin:0"><img class="crop" src="${esc(a.latest_crop_url)}" data-zoom="${esc(a.latest_crop_url)}" alt="${esc(t("lastFrame"))}" loading="lazy"><figcaption class="muted small">${esc(t("lastFrame"))}</figcaption></figure>` : ""}
         <div class="facts">${facts}</div>
         ${photos ? `<div><div class="muted small" style="margin-bottom:4px">${esc(t("residentPhotos"))}</div><div class="thumbs">${photos}</div></div>` : ""}

@@ -13,7 +13,9 @@ Built at [RobotHack 2026](https://rh26.hacktribe.co/) (Riga, 24–28 November 20
 - [x] Accepts resident photo reports through a web form and a Telegram bot
 - [x] Merges signals about the same place into one alert and ranks it by urgency
 - [x] Shows alerts on a map with before/after frames
-- [x] Sends alerts to the district's contractor only after the clearing deadline, and checks their "cleared" against the next camera frame
+- [x] Sends alerts to the district's contractor only after the clearing deadline (08:00 / 22:00 Riga time, as in the council's regulation), and checks their "cleared" against the next camera frame
+- [x] Suggests a defect act or a notice, tracks the 24 h fix deadline, and builds a printable evidence package for the inspector
+- [x] Rejects spam: one vote per person per place, repeated photos don't count, rate limits
 - [x] Measures contractor response time and exports alerts as GeoJSON/CSV
 
 ## Getting started

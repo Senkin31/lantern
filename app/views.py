@@ -1,11 +1,14 @@
 """What each role may see. The contractor filter lives here, on the server:
-full frames (frame_url) and device ids never leave in a contractor response."""
+full frames (frame_url), the evidence package and device ids never leave in a contractor response."""
 import csv
 import io
 import json
+from datetime import timedelta
 from typing import Optional
 
-from .engine import ACTIVE, DISPATCHED, Engine
+from .engine import CLOSED, DISPATCHED, NOT_CLOSED_SQL, SNOW, Engine
+from .registry import haversine_m
+from .rules import fmt_riga
 from .timeutil import fmt_ts, parse_ts
 
 
@@ -17,6 +20,10 @@ def _seconds(a: Optional[str], b: Optional[str]) -> Optional[float]:
     if not a or not b:
         return None
     return (parse_ts(b) - parse_ts(a)).total_seconds()
+
+
+def _hours(sec: Optional[float]) -> Optional[float]:
+    return sec / 3600.0 if sec is not None else None
 
 
 class Views:
@@ -38,33 +45,47 @@ class Views:
                 return []
             sql += f" AND district IN ({','.join('?' * len(districts))})"
             args += districts
-            # contractor sees dispatched work, and closed work that had been dispatched
+            # work in open / done_reported / reopened; closed work only if it had been dispatched
             sql += " AND (status IN ('open', 'done_reported', 'reopened') OR (status = 'verified' AND opened_at IS NOT NULL))"
         if status:
             sql += " AND status = ?"
             args.append(status)
         if not include_closed:
-            sql += " AND status != 'verified'"
+            sql += f" AND {NOT_CLOSED_SQL}"
         sql += " ORDER BY id"
         return self.db.q(sql, args)
 
+    def overdue(self, a) -> bool:
+        """clock.now() > fix_due_at and not verified -> red mark for the inspector and in contractor stats."""
+        return bool(a["fix_due_at"] and a["status"] in DISPATCHED
+                    and self.e.clock.now() > parse_ts(a["fix_due_at"]))
+
+    def notify_seconds(self, a) -> Optional[float]:
+        """KPI 2: notified_at - max(detected_at, deadline_at), should be <= 15 min."""
+        if not a["notified_at"]:
+            return None
+        ref = [parse_ts(x) for x in (a["detected_at"], a["deadline_at"]) if x]
+        if not ref:
+            return None
+        return max(0.0, (parse_ts(a["notified_at"]) - max(ref)).total_seconds())
+
     def alert(self, a, role: str, detail: bool = False) -> dict:
-        hour = self.e.runtime()["hour_seconds"]
         low = self.e.cfg.low_confidence
         sigs = self.db.q("SELECT * FROM signals WHERE alert_id = ? ORDER BY timestamp, id", (a["id"],))
         reps = self.db.q("SELECT * FROM reports WHERE alert_id = ? AND relevant != 'reject' "
                          "ORDER BY timestamp, id", (a["id"],))
         if role == "contractor":
             sigs = [s for s in sigs if s["confidence"] >= low]  # low-confidence frames: inspector only
-        response = _seconds(a["opened_at"], a["verified_at"])
-        notify = _seconds(a["detected_at"], a["notified_at"])
+        response = _seconds(a["notified_at"], a["verified_at"])
         first, last = (sigs[0], sigs[-1]) if sigs else (None, None)
         hazard_sigs = [s for s in sigs if s["hazard_class"] != "clear"]
         before = hazard_sigs[0] if hazard_sigs else first
         devices = {r["device_id"] for r in reps if r["counted"]}
+        fix_left = _seconds(fmt_ts(self.e.clock.now()), a["fix_due_at"]) if a["fix_due_at"] else None
         out = {
             "id": a["id"],
             "status": a["status"],
+            "severity": a["severity"] or "notice",
             "zone_id": a["zone_id"],
             "camera_id": a["camera_id"],
             "district": a["district"],
@@ -82,14 +103,18 @@ class Views:
             "first_seen_at": a["first_seen_at"],
             "last_evidence_at": a["last_evidence_at"],
             "detected_at": a["detected_at"],
+            "deadline_at": a["deadline_at"],
             "opened_at": a["opened_at"],
             "notified_at": a["notified_at"],
+            "fix_due_at": a["fix_due_at"],
+            "fix_left_seconds": fix_left if a["status"] in DISPATCHED else None,
+            "overdue": self.overdue(a),
             "done_reported_at": a["done_reported_at"],
             "verified_at": a["verified_at"],
             "reopened_count": a["reopened_count"],
             "flagged_for_council": bool(a["flagged_for_council"]),
             "response_seconds": response,
-            "response_hours": response / hour if response is not None else None,
+            "response_hours": _hours(response),
             "report_count": len(devices),
             "signal_count": len(sigs),
             "source_types": (["camera"] if sigs else []) + (["resident"] if reps else []),
@@ -101,20 +126,32 @@ class Views:
         }
         if role == "inspector":
             out.update({
+                "severity_suggested": a["severity_suggested"],
+                "severity_manual": a["severity_manual"],
+                "severity_reason": a["severity_reason"],
+                "snowfall_id": a["snowfall_id"],
                 "inspector_flags": json.loads(a["inspector_flags"] or "[]"),
-                "notify_seconds": notify,
+                "notify_seconds": self.notify_seconds(a),
                 "latest_frame_url": last["frame_url"] if last else None,
                 "before_frame_url": before["frame_url"] if before else None,
                 "after_frame_url": last["frame_url"] if last and last is not before else None,
                 "latest_confidence": last["confidence"] if last else None,
+                "registration_nos": [r["registration_no"] for r in reps if r["registration_no"]],
+                "evidence_url": f"/alerts/{a['id']}/evidence?role=inspector" if a["opened_at"] else None,
             })
         if detail:
             out["signals"] = [self.signal(s, role) for s in sigs]
             out["reports"] = [self.report(r, role) for r in reps]
-            out["history"] = [dict(h) for h in self.db.q(
-                "SELECT from_status, to_status, actor, at, note FROM status_history WHERE alert_id = ? ORDER BY id",
-                (a["id"],))]
+            out["history"] = self.history(a["id"], role)
         return out
+
+    def history(self, alert_id: int, role: str) -> list:
+        rows = [dict(h) for h in self.db.q(
+            "SELECT from_status, to_status, actor, at, note FROM status_history WHERE alert_id = ? ORDER BY id",
+            (alert_id,))]
+        if role == "contractor":  # the contractor never saw the watch phase
+            rows = [h for h in rows if h["to_status"] not in ("watch", "cleared_in_time")]
+        return rows
 
     def signal(self, s, role: str) -> dict:
         d = {k: s[k] for k in ("id", "zone_id", "timestamp", "hazard_class", "blocked_share", "confidence",
@@ -136,29 +173,59 @@ class Views:
                 "ai_score": r["ai_score"], "ai_hint": r["ai_hint"], "ai_note": r["ai_note"],
                 "counted": bool(r["counted"]), "duplicate": bool(r["duplicate"]),
                 "moderated_by": r["moderated_by"], "device": (r["device_id"] or "")[:8],
-                "same_photo_as": r["reuse_of"],
+                "same_photo_as": r["reuse_of"], "registration_no": r["registration_no"],
             })
         return d
 
-    # ------------------------------------------------------------------ inspector lists
-    def inspection_today(self, limit: int = 10) -> list:
-        rows = [a for a in self.db.q("SELECT * FROM alerts WHERE status != 'verified'")
-                if a["status"] in DISPATCHED or json.loads(a["inspector_flags"] or "[]")]
+    # ------------------------------------------------------------------ inspector check list
+    def problem_place(self, a) -> bool:
+        """Reopened at this place (same zone, or within the merge radius) in the last 30 days."""
+        since = fmt_ts(self.e.clock.now() - timedelta(days=self.e.cfg.problem_place_days))
+        for o in self.db.q("SELECT id, zone_id, lat, lon FROM alerts WHERE reopened_count > 0 AND updated_at >= ?",
+                           (since,)):
+            if o["id"] == a["id"]:
+                return True
+            if (a["zone_id"] and o["zone_id"] == a["zone_id"]) or \
+                    haversine_m(a["lat"], a["lon"], o["lat"], o["lon"]) <= self.e.cfg.merge_radius_m:
+                return True
+        return False
 
-        def key(a):
-            return (-a["urgency_score"], -int(a["status"] == "reopened"), -int(a["status"] == "done_reported"),
-                    parse_ts(a["first_seen_at"]))
+    def inspection_today(self, limit: int = 10) -> list:
+        """Check list for the inspector's day (08:30-17:00), in the brief's order:
+        act -> overdue fix_due_at -> unconfirmed complaints without a camera -> problem places
+        (reopened within 30 days) -> urgency."""
+        rows = []
+        for a in self.db.q(f"SELECT * FROM alerts WHERE {NOT_CLOSED_SQL}"):
+            flags = json.loads(a["inspector_flags"] or "[]")
+            no_camera = a["zone_id"] is None
+            if not (a["status"] in DISPATCHED or flags or no_camera):
+                continue  # a camera alert still in watch: nothing to check before the deadline
+            rows.append((a, flags, no_camera, self.problem_place(a), self.overdue(a)))
+
+        def key(item):
+            a, flags, no_camera, problem, overdue = item
+            act = a["severity"] == "act" and a["status"] in DISPATCHED
+            return (0 if act else 1, 0 if overdue else 1, 0 if no_camera else 1, 0 if problem else 1,
+                    -a["urgency_score"], parse_ts(a["first_seen_at"]))
 
         rows.sort(key=key)
         out = []
-        for a in rows[:limit]:
+        for a, flags, no_camera, problem, overdue in rows[:limit]:
             d = self.alert(a, "inspector")
             why = []
+            if a["severity"] == "act" and a["status"] in DISPATCHED:
+                why.append("act")
+            if overdue:
+                why.append("overdue")
+            if no_camera:
+                why.append("no_camera")
+            if problem:
+                why.append("problem_place")
             if a["status"] == "reopened":
                 why.append("reopened")
             if a["status"] == "done_reported":
                 why.append("check_done")
-            why += d["inspector_flags"]
+            why += flags
             if a["urgency_level"] == "high":
                 why.append("high")
             d["why"] = why
@@ -174,25 +241,29 @@ class Views:
         return [self.report(r, "inspector") for r in self.db.q(sql, args)]
 
     # ------------------------------------------------------------------ stats (KPI)
-    def response_stats(self, within_hours: float = 6.0) -> dict:
-        rt = self.e.runtime()
-        hour = rt["hour_seconds"]
-        kpi_seconds = self.e.cfg.notify_kpi_minutes / 60.0 * hour
+    def response_stats(self, within_hours: Optional[float] = None) -> dict:
+        """Response time = verified_at - notified_at, per contractor (and district): average,
+        share closed within 24 h, reopened, overdue, and KPI 2 (notification <= 15 min)."""
+        within = within_hours or self.e.cfg.fix_hours
+        kpi_seconds = self.e.cfg.notify_kpi_minutes * 60.0
         groups: dict = {}
-        for a in self.db.q("SELECT * FROM alerts WHERE opened_at IS NOT NULL"):
+        for a in self.db.q("SELECT * FROM alerts WHERE notified_at IS NOT NULL"):
             for key in (("contractor", a["contractor_id"] or "-"), ("district", a["district"] or "-")):
                 g = groups.setdefault(key, {"opened": 0, "verified": 0, "active": 0, "responses": [],
-                                            "reopened": 0, "reopened_alerts": 0, "notify": []})
+                                            "reopened": 0, "reopened_alerts": 0, "notify": [], "overdue": 0,
+                                            "act": 0, "notice": 0})
                 g["opened"] += 1
                 g["reopened"] += a["reopened_count"]
                 g["reopened_alerts"] += 1 if a["reopened_count"] else 0
-                r = _seconds(a["opened_at"], a["verified_at"])
+                g["overdue"] += 1 if self.overdue(a) else 0
+                g["act" if a["severity"] == "act" else "notice"] += 1
+                r = _seconds(a["notified_at"], a["verified_at"])
                 if a["status"] == "verified" and r is not None:
                     g["verified"] += 1
                     g["responses"].append(r)
                 else:
                     g["active"] += 1
-                n = _seconds(a["detected_at"], a["notified_at"])
+                n = self.notify_seconds(a)
                 if n is not None:
                     g["notify"].append(n)
 
@@ -202,15 +273,16 @@ class Views:
                 if k != kind:
                     continue
                 resp = g["responses"]
-                within = sum(1 for r in resp if r <= within_hours * hour)
+                ok = sum(1 for r in resp if r <= within * 3600)
                 row = {
                     "id": ident,
                     "opened": g["opened"], "verified": g["verified"], "active": g["active"],
-                    "avg_response_hours": (sum(resp) / len(resp) / hour) if resp else None,
-                    "max_response_hours": (max(resp) / hour) if resp else None,
-                    "share_within": (within / g["opened"]) if g["opened"] else None,
+                    "act": g["act"], "notice": g["notice"], "overdue": g["overdue"],
+                    "avg_response_hours": _hours(sum(resp) / len(resp)) if resp else None,
+                    "max_response_hours": _hours(max(resp)) if resp else None,
+                    "share_within": (ok / g["opened"]) if g["opened"] else None,
                     "reopened_times": g["reopened"], "reopened_alerts": g["reopened_alerts"],
-                    "avg_notify_minutes": (sum(g["notify"]) / len(g["notify"]) / hour * 60) if g["notify"] else None,
+                    "avg_notify_minutes": (sum(g["notify"]) / len(g["notify"]) / 60) if g["notify"] else None,
                     "share_notify_kpi": (sum(1 for n in g["notify"] if n <= kpi_seconds) / len(g["notify"]))
                     if g["notify"] else None,
                 }
@@ -219,14 +291,78 @@ class Views:
                 out.append(row)
             return out
 
-        return {"within_hours": within_hours, "hour_seconds": hour,
-                "notify_kpi_minutes": self.e.cfg.notify_kpi_minutes,
+        return {"within_hours": within, "notify_kpi_minutes": self.e.cfg.notify_kpi_minutes,
                 "by_contractor": summarize("contractor"), "by_district": summarize("district")}
 
+    # ------------------------------------------------------------------ evidence package (inspector only)
+    def evidence(self, a) -> dict:
+        """Frame + time + place + history: what the council needs to prove a violation."""
+        e = self.e
+        deadline = parse_ts(a["deadline_at"])
+        sigs = self.db.q("SELECT * FROM signals WHERE alert_id = ? AND confidence >= ? ORDER BY timestamp, id",
+                         (a["id"], e.cfg.low_confidence))
+        after = [s for s in sigs if deadline is None or parse_ts(s["timestamp"]) >= deadline]
+        snow_after = [s for s in after if s["hazard_class"] in SNOW]
+        clear_after = [s for s in after if s["hazard_class"] == "clear"
+                       and (not snow_after or parse_ts(s["timestamp"]) > parse_ts(snow_after[0]["timestamp"]))]
+
+        def frame(s, label):
+            if s is None:
+                return None
+            ts = parse_ts(s["timestamp"])
+            return {"label": label, "timestamp": s["timestamp"], "riga_time": fmt_riga(ts),
+                    "frame_url": s["frame_url"], "crop_url": s["crop_url"], "hazard_class": s["hazard_class"],
+                    "blocked_share": s["blocked_share"], "confidence": s["confidence"], "camera_id": s["camera_id"],
+                    "zone_id": s["zone_id"]}
+
+        sf = self.db.one("SELECT * FROM snowfalls WHERE id = ?", (a["snowfall_id"],)) if a["snowfall_id"] else None
+        reps = self.db.q("SELECT * FROM reports WHERE alert_id = ? AND relevant != 'reject' ORDER BY timestamp, id",
+                         (a["id"],))
+        cam = e.registry.cameras.get(a["camera_id"]) if a["camera_id"] else None
+        history = []
+        for h in self.history(a["id"], "inspector"):
+            history.append({**h, "riga_time": fmt_riga(parse_ts(h["at"]))})
+        return {
+            "alert_id": a["id"],
+            "status": a["status"],
+            "severity": a["severity"],
+            "severity_reason": a["severity_reason"],
+            "generated_at": fmt_ts(e.clock.now()),
+            "generated_riga": fmt_riga(e.clock.now()),
+            "place": {"lat": a["lat"], "lon": a["lon"], "polygon": json.loads(a["polygon"]) if a["polygon"] else None,
+                      "zone_id": a["zone_id"], "camera_id": a["camera_id"],
+                      "camera_name": (cam or {}).get("name"), "place_type": a["place_type"],
+                      "district": a["district"], "contractor_id": a["contractor_id"],
+                      "contractor_name": e.registry.contractor_name(a["contractor_id"])},
+            "deadline": {"deadline_at": a["deadline_at"], "riga_time": fmt_riga(deadline),
+                         "snowfall": None if sf is None else {
+                             "start": sf["start"], "end": sf["end"],
+                             "start_riga": fmt_riga(parse_ts(sf["start"])), "end_riga": fmt_riga(parse_ts(sf["end"]))},
+                         "rule": "RD-24-270-sn: snowfall ended before 08:00 -> 08:00, 08:00-22:00 -> 22:00, "
+                                 "after 22:00 -> 08:00 next day, unknown -> 08:00 of the day the snow was seen"},
+            "times": {k: {"utc": a[k], "riga_time": fmt_riga(parse_ts(a[k]))} for k in
+                      ("detected_at", "notified_at", "fix_due_at", "done_reported_at", "verified_at")},
+            "overdue": self.overdue(a),
+            "frames": [f for f in (
+                frame(snow_after[0] if snow_after else None, "first_snow_after_deadline"),
+                frame(snow_after[-1] if len(snow_after) > 1 else None, "last_snow"),
+                frame(clear_after[0] if clear_after else None, "clear"),
+            ) if f],
+            "resident_photos": [{"photo_url": _photo_url(r["photo_path"]), "timestamp": r["timestamp"],
+                                 "riga_time": fmt_riga(parse_ts(r["timestamp"])), "passable": r["passable"],
+                                 "hazard": r["hazard"], "comment": r["comment"],
+                                 "registration_no": r["registration_no"]}
+                                for r in reps if r["photo_path"]],  # no device ids
+            "history": history,
+            "reopened_count": a["reopened_count"],
+            "footer": "Сформировано Lantern; кадры камер города, обработка на сервере думы",
+        }
+
     # ------------------------------------------------------------------ open-data export
-    EXPORT_FIELDS = ("id", "status", "urgency_level", "urgency_score", "district", "contractor_id", "place_type",
-                     "hazard_now", "first_seen_at", "detected_at", "opened_at", "notified_at", "done_reported_at",
-                     "verified_at", "response_hours", "reopened_count", "report_count", "signal_count", "lat", "lon")
+    EXPORT_FIELDS = ("id", "status", "severity", "urgency_level", "urgency_score", "district", "contractor_id",
+                     "place_type", "hazard_now", "first_seen_at", "detected_at", "deadline_at", "notified_at",
+                     "fix_due_at", "done_reported_at", "verified_at", "response_hours", "overdue", "reopened_count",
+                     "report_count", "signal_count", "lat", "lon")
 
     def _export_rows(self) -> list:
         return [self.alert(a, "contractor") for a in self.db.q("SELECT * FROM alerts ORDER BY id")]

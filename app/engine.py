@@ -1,7 +1,7 @@
-"""Alert rules: merging, clearing deadline, urgency, statuses (brief v2, "Правила заявок").
+"""Alert rules: merging, clearing deadline, urgency, severity, statuses (brief v3, "Правила заявок").
 
 Everything that decides what an alert is lives here; the HTTP layer only validates
-input and the views only filter output by role.
+input and the views only filter output by role. Every rule reads self.clock.now().
 """
 import json
 import secrets
@@ -10,16 +10,21 @@ from typing import Optional
 
 from .db import Database
 from .registry import PRIORITY_PLACES, Registry, haversine_m, point_in_polygon
+from .rules import clearing_deadline
 from .timeutil import Clock, fmt_ts, parse_ts
 
-STATUSES = ("watch", "open", "done_reported", "verified", "reopened")
+STATUSES = ("watch", "cleared_in_time", "open", "done_reported", "verified", "reopened")
 ACTIVE = ("watch", "open", "done_reported", "reopened")
+CLOSED = ("verified", "cleared_in_time")
 DISPATCHED = ("open", "done_reported", "reopened")  # what a contractor sees as work
+SEVERITIES = ("act", "notice")
 HAZARD_CLASSES = ("clear", "snow", "blocked", "possible_ice")
 PLACE_TYPES = ("sidewalk", "crossing", "ramp", "stop", "path", "square", "other")
 PASSABLE = ("no", "partly", "yes")
 REPORT_HAZARDS = ("snow", "ice", "icicles", "other")
 RELEVANT = ("accept", "review", "reject")
+SNOW = ("snow", "blocked")
+NOT_CLOSED_SQL = "status NOT IN ('verified', 'cleared_in_time')"
 
 
 class RuleError(ValueError):
@@ -27,17 +32,16 @@ class RuleError(ValueError):
 
 
 def camera_points(hazard_class: str, blocked_share: float) -> int:
-    if hazard_class == "blocked":
-        if blocked_share >= 0.6:
-            return 3
-        if blocked_share >= 0.3:
-            return 2
-        return 1
+    """v3 table: blocked or share >= 0.6 -> 3; share 0.3-0.6 -> 2; snow below 0.3 -> 1; possible_ice -> 2."""
+    if hazard_class == "clear":
+        return 0
+    if hazard_class == "blocked" or blocked_share >= 0.6:
+        return 3
     if hazard_class == "possible_ice":
         return 2
-    if hazard_class == "snow":
-        return 1
-    return 0
+    if blocked_share >= 0.3:
+        return 2
+    return 1
 
 
 def report_points(passable: str) -> int:
@@ -64,70 +68,77 @@ class Engine:
         self.clock = clock
         self.registry = registry
 
-    # ------------------------------------------------------------------ runtime settings
-    def _get(self, key: str) -> Optional[str]:
-        row = self.db.one("SELECT value FROM settings WHERE key = ?", (key,))
-        return row["value"] if row else None
-
-    def _put(self, key: str, value: Optional[str]) -> None:
-        self.db.run("INSERT INTO settings(key, value) VALUES(?, ?) "
-                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
-
-    def runtime(self) -> dict:
-        snow = self._get("snowfall_end")
-        if snow is None:
-            snow = self.cfg.snowfall_end or ""
-        hour = self._get("hour_seconds")
-        clearing = self._get("clearing_hours")
-        return {
-            "snowfall_end": snow or None,
-            "hour_seconds": float(hour) if hour else self.cfg.hour_seconds,
-            "clearing_hours": float(clearing) if clearing else self.cfg.clearing_hours,
-        }
-
-    def update_runtime(self, snowfall_end=..., hour_seconds=None, clearing_hours=None, actor="inspector") -> dict:
-        if snowfall_end is not ...:
-            if snowfall_end in (None, ""):
-                self._put("snowfall_end", "")
-            else:
-                value = self.clock.now() if snowfall_end == "now" else parse_ts(snowfall_end)
-                self._put("snowfall_end", fmt_ts(value))
-        if hour_seconds is not None:
-            if hour_seconds <= 0:
-                raise RuleError("hour_seconds must be > 0")
-            self._put("hour_seconds", repr(float(hour_seconds)))
-        if clearing_hours is not None:
-            if clearing_hours < 0:
-                raise RuleError("clearing_hours must be >= 0")
-            self._put("clearing_hours", repr(float(clearing_hours)))
-        self.tick()
-        return self.runtime_view()
-
     def hours(self, h: float) -> timedelta:
-        return timedelta(seconds=h * self.runtime()["hour_seconds"])
+        return timedelta(hours=h)
 
-    def deadline(self) -> Optional[datetime]:
-        rt = self.runtime()
-        end = parse_ts(rt["snowfall_end"]) if rt["snowfall_end"] else None
-        if end is None:
+    # ------------------------------------------------------------------ snowfalls and deadlines
+    def add_snowfall(self, start: Optional[datetime], end: Optional[datetime], source: str = "api") -> dict:
+        """POST /snowfalls: the end of a snowfall sets the clearing deadline (08:00 / 22:00 Riga)."""
+        if start is None and end is None:
+            raise RuleError("start or end is required")
+        if start and end and end < start:
+            raise RuleError("end is before start")
+        with self.db.lock:
+            ongoing = self.db.one("SELECT * FROM snowfalls WHERE end IS NULL ORDER BY id DESC LIMIT 1")
+            if end is not None and ongoing is not None and parse_ts(ongoing["start"]) <= end \
+                    and (start is None or start <= parse_ts(ongoing["start"]) + timedelta(hours=1)):
+                # the end of the snowfall that is still going on: close it instead of adding a new one
+                sid = ongoing["id"]
+                self.db.run("UPDATE snowfalls SET end = ?, start = COALESCE(start, ?) WHERE id = ?",
+                            (fmt_ts(end), fmt_ts(start), sid))
+            else:
+                sid = self.db.run("INSERT INTO snowfalls(start, end, source, created_at) VALUES(?, ?, ?, ?)",
+                                  (fmt_ts(start), fmt_ts(end), source, fmt_ts(self.clock.now())))
+            self.tick()
+            return self.snowfall_view(self.db.one("SELECT * FROM snowfalls WHERE id = ?", (sid,)))
+
+    def snowfall_view(self, row) -> Optional[dict]:
+        if row is None:
             return None
-        return end + timedelta(seconds=rt["clearing_hours"] * rt["hour_seconds"])
+        end = parse_ts(row["end"])
+        return {"id": row["id"], "start": row["start"], "end": row["end"], "source": row["source"],
+                "deadline_at": fmt_ts(clearing_deadline(end, end)) if end else None}
+
+    def current_snowfall(self, at: Optional[datetime] = None):
+        """The latest snowfall that has started by `at` (default now). Its end decides the deadline."""
+        at_s = fmt_ts(at or self.clock.now())
+        return self.db.one("SELECT * FROM snowfalls WHERE COALESCE(start, end) <= ? "
+                           "ORDER BY COALESCE(end, start) DESC, id DESC LIMIT 1", (at_s,))
+
+    def deadline_for(self, a) -> tuple:
+        """(deadline, snowfall id) for an alert still in watch. Deadline is None while it is still snowing."""
+        sf = self.current_snowfall()
+        if sf is None:  # snowfall unknown: 08:00 of the day the snow was seen
+            return clearing_deadline(None, parse_ts(a["first_seen_at"])), None
+        end = parse_ts(sf["end"])
+        if end is None:
+            return None, sf["id"]
+        return clearing_deadline(end, end), sf["id"]
 
     def runtime_view(self) -> dict:
-        rt = self.runtime()
-        dl = self.deadline()
         now = self.clock.now()
+        sf = self.current_snowfall()
+        if sf is None:
+            dl = clearing_deadline(None, now)
+        else:
+            end = parse_ts(sf["end"])
+            dl = clearing_deadline(end, end) if end else None
         return {
-            **rt,
-            "clearing_seconds": rt["clearing_hours"] * rt["hour_seconds"],
+            "now": fmt_ts(now),
+            "clock": self.clock.describe(),
+            "snowfall": self.snowfall_view(sf),
+            "snowfalls": [self.snowfall_view(r) for r in
+                          self.db.q("SELECT * FROM snowfalls ORDER BY id DESC LIMIT 10")],
+            "snowing": bool(sf is not None and not sf["end"]),
             "deadline": fmt_ts(dl),
             "deadline_passed": bool(dl and now >= dl),
-            "now": fmt_ts(now),
+            "fix_hours": self.cfg.fix_hours,
             "merge_radius_m": self.cfg.merge_radius_m,
             "merge_window_hours": self.cfg.merge_window_hours,
-            "reopen_after_hours": self.cfg.reopen_after_hours,
             "low_confidence": self.cfg.low_confidence,
             "notify_kpi_minutes": self.cfg.notify_kpi_minutes,
+            "inspection_hours": self.cfg.inspection_hours,
+            "timezone": "Europe/Riga",
         }
 
     # ------------------------------------------------------------------ helpers
@@ -153,7 +164,8 @@ class Engine:
         alert_id = self.db.run(
             "INSERT INTO alerts(zone_id, camera_id, district, contractor_id, lat, lon, polygon, place_type, "
             "near_sensitive, status, first_seen_at, last_evidence_at, created_at, updated_at, "
-            "urgency_reasons, inspector_flags) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 'watch', ?, ?, ?, ?, '[]', '[]')",
+            "urgency_reasons, inspector_flags, severity) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 'watch', ?, ?, ?, ?, '[]', '[]', 'notice')",
             (zone_id, camera_id, district, self.registry.contractor_for(district), lat, lon,
              json.dumps(polygon) if polygon else None, place_type, 1 if near_sensitive else 0,
              fmt_ts(first_seen), fmt_ts(first_seen), now, now))
@@ -172,11 +184,13 @@ class Engine:
         now = fmt_ts(self.clock.now())
         reliable = s["confidence"] >= self.cfg.low_confidence
         with self.db.lock:
-            row = self.db.one("SELECT * FROM alerts WHERE zone_id = ? AND status != 'verified' "
+            row = self.db.one(f"SELECT * FROM alerts WHERE zone_id = ? AND {NOT_CLOSED_SQL} "
                               "ORDER BY id DESC LIMIT 1", (s["zone_id"],))
             alert_id = row["id"] if row else None
+            fresh = False
             if alert_id is None and s["hazard_class"] != "clear":
                 alert_id = self._alert_for_zone(s, ts)
+                fresh = True
             self.db.run(
                 "INSERT INTO signals(alert_id, source, camera_id, zone_id, lat, lon, timestamp, hazard_class, "
                 "blocked_share, confidence, frame_url, crop_url, received_at) "
@@ -190,8 +204,18 @@ class Engine:
             if reliable:
                 self._camera_transition(alert_id, s, ts)
             self.recompute(alert_id)
-            self._maybe_open(alert_id)
+            self._maybe_open(alert_id, fresh=fresh)
+            self._recompute_camera_siblings(alert_id)
             return alert_id
+
+    def _recompute_camera_siblings(self, alert_id: int) -> None:
+        """Severity 'act' can depend on snow in a neighbouring zone of the same camera."""
+        a = self.alert(alert_id)
+        if not a["camera_id"]:
+            return
+        for o in self.db.q(f"SELECT id FROM alerts WHERE camera_id = ? AND id != ? AND {NOT_CLOSED_SQL}",
+                           (a["camera_id"], alert_id)):
+            self.recompute(o["id"])
 
     def _alert_for_zone(self, s: dict, ts: datetime) -> int:
         z = self.registry.zones.get(s["zone_id"])
@@ -211,18 +235,19 @@ class Engine:
             actor="system", note=f"camera: {s['hazard_class']}")
 
     def _camera_transition(self, alert_id: int, s: dict, ts: datetime) -> None:
+        """A clear frame closes the alert (not the contractor's button); snow after 'done' reopens it."""
         a = self.alert(alert_id)
         st, cls = a["status"], s["hazard_class"]
         now = fmt_ts(self.clock.now())
         if cls == "clear":
             if st == "watch":
-                self._set_status(alert_id, "verified", "system", "camera: clear before the clearing deadline",
-                                 verified_at=now)
+                self._set_status(alert_id, "cleared_in_time", "system",
+                                 "camera: clear before the clearing deadline", verified_at=now)
             elif st in DISPATCHED:
                 self._set_status(alert_id, "verified", "system", "camera: clear", verified_at=now)
-        elif cls in ("snow", "blocked") and st == "done_reported":
+        elif cls in SNOW and st == "done_reported":
             done = parse_ts(a["done_reported_at"])
-            if done and ts >= done + self.hours(self.cfg.reopen_after_hours):
+            if done and ts >= done + timedelta(minutes=self.cfg.reopen_after_minutes):
                 self._set_status(alert_id, "reopened", "system",
                                  f"camera still sees {cls} ({s['blocked_share']:.0%}) after 'done'",
                                  reopened_count=a["reopened_count"] + 1, flagged_for_council=1)
@@ -231,7 +256,7 @@ class Engine:
     def find_merge_target(self, lat: float, lon: float, ts: datetime):
         window = self.hours(self.cfg.merge_window_hours)
         best, best_d = None, float("inf")
-        for a in self.db.q("SELECT * FROM alerts WHERE status != 'verified'"):
+        for a in self.db.q(f"SELECT * FROM alerts WHERE {NOT_CLOSED_SQL}"):
             if parse_ts(a["last_evidence_at"]) < ts - window:
                 continue
             poly = json.loads(a["polygon"]) if a["polygon"] else None
@@ -250,7 +275,8 @@ class Engine:
 
     def ingest_report(self, r: dict, analysis: dict, photo_path: Optional[str], channel: str, *,
                       photo_sha256: Optional[str] = None, photo_dhash: Optional[str] = None,
-                      ip_hash: Optional[str] = None, reuse_of: Optional[int] = None):
+                      ip_hash: Optional[str] = None, reuse_of: Optional[int] = None,
+                      registration_no: Optional[str] = None):
         """Store a resident report; rejected ones are kept but never become alerts.
         A photo that was already sent (reuse_of) is stored but never counts as a confirmation."""
         ts = parse_ts(r.get("timestamp")) or self.clock.now()
@@ -259,6 +285,7 @@ class Engine:
         with self.db.lock:
             alert_id = None
             duplicate = False
+            fresh = False
             if relevant != "reject":
                 target = self.find_merge_target(r["lat"], r["lon"], ts)
                 if target is not None:
@@ -271,6 +298,7 @@ class Engine:
                         zone_id=None, camera_id=None, district=district, lat=r["lat"], lon=r["lon"],
                         polygon=None, place_type=r.get("place_type") or "sidewalk", near_sensitive=False,
                         first_seen=ts, actor="system", note="resident report")
+                    fresh = True
             counted = relevant == "accept" and not duplicate and reuse_of is None
             ticket = new_ticket()
             while self.db.one("SELECT 1 FROM reports WHERE ticket = ?", (ticket,)):
@@ -278,16 +306,17 @@ class Engine:
             report_id = self.db.run(
                 "INSERT INTO reports(alert_id, ticket, channel, photo_path, lat, lon, passable, hazard, place_type, "
                 "comment, device_id, timestamp, relevant, ai_score, ai_hint, ai_note, counted, duplicate, received_at, "
-                "photo_sha256, photo_dhash, ip_hash, reuse_of) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "photo_sha256, photo_dhash, ip_hash, reuse_of, registration_no) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (alert_id, ticket, channel, photo_path, r["lat"], r["lon"], r["passable"], r.get("hazard"),
                  r.get("place_type"), r.get("comment") or "", r["device_id"], fmt_ts(ts), relevant,
                  analysis.get("score"), analysis.get("hint"), analysis.get("note"),
-                 1 if counted else 0, 1 if duplicate else 0, now, photo_sha256, photo_dhash, ip_hash, reuse_of))
+                 1 if counted else 0, 1 if duplicate else 0, now, photo_sha256, photo_dhash, ip_hash, reuse_of,
+                 registration_no))
             if alert_id is not None:
                 self._bump_evidence(alert_id, ts)
                 self.recompute(alert_id)
-                self._maybe_open(alert_id)
+                self._maybe_open(alert_id, fresh=fresh)
             return self.db.one("SELECT * FROM reports WHERE id = ?", (report_id,))
 
     def moderate_report(self, report_id: int, decision: str, actor: str):
@@ -324,7 +353,7 @@ class Engine:
                 self._maybe_open(alert_id)
             return self.db.one("SELECT * FROM reports WHERE id = ?", (report_id,))
 
-    # ------------------------------------------------------------------ urgency
+    # ------------------------------------------------------------------ urgency and severity
     def recompute(self, alert_id: int) -> None:
         a = self.alert(alert_id)
         low = self.cfg.low_confidence
@@ -383,9 +412,32 @@ class Engine:
         if any(r["relevant"] == "review" and not r["moderated_by"] for r in reps):
             flags.append("review_report")
 
+        suggested, why = self._suggest_severity(a, reliable, counted)
+        severity = a["severity_manual"] or suggested
         self.db.run("UPDATE alerts SET urgency_score = ?, urgency_level = ?, urgency_reasons = ?, "
-                    "inspector_flags = ?, hazard_now = ? WHERE id = ?",
-                    (score, level, json.dumps(reasons), json.dumps(flags), hazard_now, alert_id))
+                    "inspector_flags = ?, hazard_now = ?, severity = ?, severity_suggested = ?, "
+                    "severity_reason = ? WHERE id = ?",
+                    (score, level, json.dumps(reasons), json.dumps(flags), hazard_now, severity, suggested, why,
+                     alert_id))
+
+    def _suggest_severity(self, a, reliable: list, counted: list) -> tuple:
+        """act = candidate for a defect act; notice = letter to the contractor (both: 24 h to fix).
+        Only a suggestion: the inspector changes it with one click."""
+        snow = [s for s in reliable if s["hazard_class"] in SNOW]
+        for s in snow:
+            if (s["hazard_class"] == "blocked" or s["blocked_share"] >= 0.6) \
+                    and s["confidence"] >= self.cfg.act_confidence:
+                return "act", f"camera: {s['hazard_class']} {s['blocked_share']:.0%}, confidence {s['confidence']:.2f}"
+        if snow and any(r["passable"] == "no" for r in counted):
+            return "act", "camera snow + resident: impassable"
+        snow_now = bool(reliable) and reliable[-1]["hazard_class"] in SNOW
+        if snow_now and a["camera_id"]:
+            other = self.db.one(f"SELECT zone_id FROM alerts WHERE camera_id = ? AND id != ? AND zone_id != ? "
+                                f"AND {NOT_CLOSED_SQL} AND hazard_now IN ('snow', 'blocked')",
+                                (a["camera_id"], a["id"], a["zone_id"] or ""))
+            if other is not None:
+                return "act", f"snow in two zones of one camera (+ {other['zone_id']})"
+        return "notice", "partly cleared or a single source"
 
     # ------------------------------------------------------------------ deadline
     def dispatchable(self, a) -> bool:
@@ -393,35 +445,77 @@ class Engine:
         if not a["contractor_id"]:
             return False
         hazard = a["hazard_now"]
-        if hazard in ("snow", "blocked"):
+        if hazard in SNOW:
             return True
         has_counted = self.db.one("SELECT 1 FROM reports WHERE alert_id = ? AND counted = 1",
                                   (a["id"],)) is not None
         return hazard in (None, "reported", "possible_ice") and has_counted
 
-    def _maybe_open(self, alert_id: int) -> bool:
+    def _open_fields(self, a, now: datetime, deadline: Optional[datetime]) -> dict:
+        """detected_at = first snow frame; notified_at = contractor got it; fix_due_at = notified_at + 24 h."""
+        first = self.db.one("SELECT timestamp FROM signals WHERE alert_id = ? AND confidence >= ? AND "
+                            "hazard_class IN ('snow', 'blocked') ORDER BY timestamp, id LIMIT 1",
+                            (a["id"], self.cfg.low_confidence))
+        if first is None:
+            first = self.db.one("SELECT timestamp FROM reports WHERE alert_id = ? AND counted = 1 "
+                                "ORDER BY timestamp, id LIMIT 1", (a["id"],))
+        detected = parse_ts(first["timestamp"]) if first else parse_ts(a["first_seen_at"])
+        return {"opened_at": fmt_ts(now), "notified_at": fmt_ts(now), "detected_at": fmt_ts(detected),
+                "fix_due_at": fmt_ts(now + timedelta(hours=self.cfg.fix_hours)),
+                "deadline_at": fmt_ts(deadline) if deadline else a["deadline_at"]}
+
+    def _maybe_open(self, alert_id: int, fresh: bool = False) -> bool:
+        """watch -> open once the clearing deadline has passed and snow is still there.
+        Snow first seen after the deadline goes straight to open, with no watch step (fresh=True)."""
         a = self.alert(alert_id)
         if a["status"] != "watch":
             return False
-        dl = self.deadline()
+        deadline, sf_id = self.deadline_for(a)
+        dl_text = fmt_ts(deadline)
+        if dl_text != a["deadline_at"] or sf_id != a["snowfall_id"]:
+            self.db.run("UPDATE alerts SET deadline_at = ?, snowfall_id = ? WHERE id = ?",
+                        (dl_text, sf_id, alert_id))
+            a = self.alert(alert_id)
         now = self.clock.now()
-        if dl is None or now < dl or not self.dispatchable(a):
+        if deadline is None or now < deadline or not self.dispatchable(a):
             return False
-        detected = max(dl, parse_ts(a["first_seen_at"]))
-        self._set_status(alert_id, "open", "system",
-                         "clearing deadline passed, hazard still there",
-                         opened_at=fmt_ts(now), notified_at=fmt_ts(now), detected_at=fmt_ts(detected))
+        fields = self._open_fields(a, now, deadline)
+        if fresh:  # replace the creation row: the history shows the alert born open
+            note = "seen after the clearing deadline"
+            fields.update(status="open", updated_at=fmt_ts(now))
+            cols = ", ".join(f"{k} = ?" for k in fields)
+            self.db.run(f"UPDATE alerts SET {cols} WHERE id = ?", (*fields.values(), alert_id))
+            self.db.run("UPDATE status_history SET to_status = 'open', note = COALESCE(note, '') || ' · ' || ? "
+                        "WHERE alert_id = ? AND from_status IS NULL", (note, alert_id))
+        else:
+            self._set_status(alert_id, "open", "system", "clearing deadline passed, snow still there", **fields)
+        self.recompute(alert_id)
         return True
 
     def tick(self) -> int:
-        """Called every second: watch -> open once the deadline has passed."""
+        """Background check by clock.now(): watch -> open once the deadline has passed."""
         with self.db.lock:
             changed = 0
             for a in self.db.q("SELECT id FROM alerts WHERE status = 'watch'"):
                 changed += self._maybe_open(a["id"])
             return changed
 
-    # ------------------------------------------------------------------ manual status changes
+    # ------------------------------------------------------------------ manual changes
+    def set_severity(self, alert_id: int, severity: str, actor: str, note: str = ""):
+        """The inspector overrides the suggested level with one click; the change goes to history."""
+        if severity not in SEVERITIES:
+            raise RuleError("severity must be act or notice")
+        with self.db.lock:
+            a = self.alert(alert_id)
+            if a is None:
+                raise KeyError(alert_id)
+            if a["severity"] != severity or a["severity_manual"] != severity:
+                self.db.run("UPDATE alerts SET severity = ?, severity_manual = ?, updated_at = ? WHERE id = ?",
+                            (severity, severity, fmt_ts(self.clock.now()), alert_id))
+                self._history(alert_id, a["status"], a["status"], f"inspector:{actor or 'inspector'}",
+                              (note + " · " if note else "") + f"severity {a['severity']} -> {severity}")
+            return self.alert(alert_id)
+
     def change_status(self, alert_id: int, to: str, role: str, actor: str, note: str = "",
                       contractor_id: Optional[str] = None):
         if to not in STATUSES:
@@ -448,12 +542,16 @@ class Engine:
                         raise RuleError("no contractor for this district")
                     extra = {}
                     if not a["opened_at"]:
-                        extra = {"opened_at": now, "notified_at": now, "detected_at": a["detected_at"] or now}
+                        extra = self._open_fields(a, self.clock.now(), None)
                     self._set_status(alert_id, "open", who, note or "dispatched by inspector", **extra)
-                elif to == "verified":
-                    if st == "verified":
-                        raise RuleError("already verified")
-                    self._set_status(alert_id, "verified", who, note or "confirmed on site", verified_at=now)
+                elif to in ("verified", "cleared_in_time"):
+                    if st in CLOSED:
+                        raise RuleError(f"already closed ({st})")
+                    if st == "watch":  # clean before the deadline: closed, never reached the contractor
+                        self._set_status(alert_id, "cleared_in_time", who,
+                                         note or "clean on site before the deadline", verified_at=now)
+                    else:
+                        self._set_status(alert_id, "verified", who, note or "confirmed on site", verified_at=now)
                 elif to == "reopened":
                     if st not in ("done_reported", "verified") or not a["opened_at"]:
                         raise RuleError("only work reported or verified as done can be disputed")

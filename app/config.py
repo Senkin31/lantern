@@ -1,8 +1,7 @@
 """Settings from the environment (.env in the repo root is read if present).
 
-All rule durations are written in "rule hours". On the demo the camera replay
-compresses time, so one rule hour can be a few real seconds: set CLEARING_SECONDS
-(printed by mock/send_signals.py) or HOUR_SECONDS and every rule scales with it.
+All durations are ordinary hours on the app clock (clock.now()). The demo speeds the
+clock up with POST /demo/clock instead of shrinking the rules (brief v3).
 """
 import os
 from pathlib import Path
@@ -21,6 +20,8 @@ def _load_dotenv(path: Path) -> None:
         key, value = key.strip(), value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
+        elif " #" in value or "\t#" in value:  # inline comment after an unquoted value
+            value = value.split(" #")[0].split("\t#")[0].rstrip()
         os.environ.setdefault(key, value)
 
 
@@ -55,17 +56,16 @@ class Settings:
         self.analyze_url = env("ANALYZE_URL", "")  # empty -> built-in stub (always accept)
         self.analyze_timeout = env_float("ANALYZE_TIMEOUT", 10.0)
 
-        self.clearing_hours = env_float("CLEARING_HOURS", 6.0)
-        clearing_seconds = env_float("CLEARING_SECONDS", 0.0)
-        hour_seconds = env_float("HOUR_SECONDS", 0.0)
-        if hour_seconds <= 0:
-            hour_seconds = clearing_seconds / self.clearing_hours if clearing_seconds > 0 else 3600.0
-        self.hour_seconds = hour_seconds
-        self.snowfall_end = env("SNOWFALL_END", "")  # ISO 8601 UTC, or empty
+        # clearing deadline: 08:00 / 22:00 Riga time from POST /snowfalls (app/rules.py), no CLEARING_HOURS
+        self.fix_hours = env_float("FIX_HOURS", 24.0)                  # act or notice: 24 h to fix
+        self.act_confidence = env_float("ACT_CONFIDENCE", 0.7)         # camera evidence strong enough for an act
+        self.problem_place_days = env_float("PROBLEM_PLACE_DAYS", 30.0)  # reopened here recently -> check list
+        self.inspection_hours = env("INSPECTION_HOURS", "08:30-17:00")
+        self.demo_endpoints = env("DEMO_ENDPOINTS", "1") not in ("0", "false", "no")
 
         self.merge_radius_m = env_float("MERGE_RADIUS_M", 30.0)
         self.merge_window_hours = env_float("MERGE_WINDOW_HOURS", 6.0)
-        self.reopen_after_hours = env_float("REOPEN_AFTER_HOURS", 1.0)
+        self.reopen_after_minutes = env_float("REOPEN_AFTER_MINUTES", 0.0)  # snow after "done" -> reopened
         self.low_confidence = env_float("LOW_CONFIDENCE", 0.5)
         self.notify_kpi_minutes = env_float("NOTIFY_KPI_MINUTES", 15.0)
 
@@ -76,7 +76,7 @@ class Settings:
         self.source_url = env("SOURCE_URL", "https://github.com/Senkin31/lantern")
         self.tick_seconds = env_float("TICK_SECONDS", 1.0)
 
-        # spam protection (app/spam.py); real time, not demo "rule hours"
+        # spam protection (app/spam.py); windows run on the app clock like every other rule
         self.rate_device_hour = int(env_float("RATE_DEVICE_HOUR", 6))
         self.rate_device_day = int(env_float("RATE_DEVICE_DAY", 20))
         self.rate_ip_hour = int(env_float("RATE_IP_HOUR", 30))

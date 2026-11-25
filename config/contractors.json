@@ -1,0 +1,18 @@
+{
+  "contractors": [
+    {
+      "id": "A",
+      "name": "Contractor A",
+      "districts": [
+        "demo-centre"
+      ]
+    },
+    {
+      "id": "B",
+      "name": "Contractor B",
+      "districts": [
+        "demo-north"
+      ]
+    }
+  ]
+}

@@ -42,12 +42,16 @@ class Registry:
         self.camera_files = [p for p in (cameras_file, cameras_fallback) if p.is_file()]
         self.cameras: dict = {}
         self.zones: dict = {}
+        self.inactive: set = set()  # "active": false (brief 1.1: Lahti, Oulu - zones not on the sidewalk)
         for path in self.camera_files:
             data = json.loads(path.read_text(encoding="utf-8"))
             for cam in data.get("cameras", []):
                 if cam.get("source") == "skyfinder":  # training-only cameras, never on the map
                     continue
-                if cam["camera_id"] in self.cameras:
+                if cam["camera_id"] in self.cameras or cam["camera_id"] in self.inactive:
+                    continue  # the first file that lists a camera wins, also when it switches it off
+                if cam.get("active") is False:
+                    self.inactive.add(cam["camera_id"])
                     continue
                 self.cameras[cam["camera_id"]] = cam
                 for z in cam.get("zones", []):
@@ -63,6 +67,9 @@ class Registry:
             for c in self.contractors:
                 for d in c.get("districts", []):
                     self.district_to_contractor[d] = c["id"]
+
+    def is_inactive(self, camera_id: Optional[str]) -> bool:
+        return camera_id in self.inactive
 
     def contractor_for(self, district: Optional[str]) -> Optional[str]:
         return self.district_to_contractor.get(district or "")

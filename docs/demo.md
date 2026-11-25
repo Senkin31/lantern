@@ -37,7 +37,7 @@ Finish on the **Response times** tab: average response per contractor, share clo
 
 ## Questions the jury may ask
 
-- **"What if the AI is wrong?"** Frames with confidence below 0.5 and `possible_ice` go only to the inspector. Resident photos the model is unsure about go to the moderation queue. A single random verdict does not close an alert; a clean frame does. Act or notice is only a suggestion, and the inspector changes it with one click.
-- **"Privacy?"** Video never leaves the council's servers. Contractors get sidewalk crops only, never the full frame or the evidence package. Residents send no name or phone number: the web form uses a random cookie id, and the bot sends a hashed id.
+- **"What if the AI is wrong?"** Model v2 tells "not cleaned at all" from "partly cleaned". On a camera it has never seen, 0–1 % of contractor jobs are false. Partly cleaned (confidence below 0.5) and `possible_ice` go only to the inspector. Resident photos the model is unsure about go to the moderation queue. A single random verdict does not close an alert; a clean frame does. Act or notice is only a suggestion, and the inspector changes it with one click.
+- **"Privacy?"** Video never leaves the council's servers. Contractors get sidewalk crops only, with people blurred, never the full frame or the evidence package. Residents send no name or phone number: the web form uses a random cookie id, and the bot sends a hashed id.
 - **"Why not just the 1201 phone line?"** This complements 1201 by adding a photo and an exact point. The camera catches problems nobody reports, and the deadline rule is the council's own regulation.
 - **"Do you plan routes?"** No. The contractor plans its own routes. The +1 for crossings and schools is our proposal, since the city has no list of priority places.

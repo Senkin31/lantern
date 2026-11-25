@@ -30,6 +30,7 @@
       // why chips / flags
       why_reopened: "Reopened", why_check_done: "Check contractor's “done”", why_possible_ice: "Possible ice",
       why_low_confidence: "Low-confidence frame", why_ice_report: "Resident: ice / icicles",
+      why_partly: "Partly cleaned (camera) · inspector only",
       why_review_report: "Report needs review", why_high: "High urgency", flagCouncil: "Flagged for the council",
       why_act: "Defect act", why_overdue: "Overdue (24 h)", why_no_camera: "Complaint, no camera", why_problem_place: "Problem place",
       // places / hazards
@@ -110,6 +111,7 @@
       clearedNote: "Tīrs kadrs pirms termiņa: notīrīts laikā, slēgts. Darbuzņēmējs to neredzēja.",
       why_reopened: "Atvērts atkārtoti", why_check_done: "Pārbaudīt “notīrīts”", why_possible_ice: "Iespējams ledus",
       why_low_confidence: "Neskaidrs kadrs", why_ice_report: "Iedzīvotājs: ledus / lāstekas",
+      why_partly: "Daļēji notīrīts (kamera) · tikai inspektoram",
       why_review_report: "Ziņojums jāpārbauda", why_high: "Augsta steidzamība", flagCouncil: "Atzīmēts domei",
       why_act: "Defektu akts", why_overdue: "Nokavēts (24 h)", why_no_camera: "Sūdzība bez kameras", why_problem_place: "Problēmvieta",
       pl_sidewalk: "Ietve", pl_crossing: "Gājēju pāreja", pl_ramp: "Nobrauktuve", pl_stop: "Pietura", pl_path: "Celiņš",

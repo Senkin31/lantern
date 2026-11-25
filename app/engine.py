@@ -188,7 +188,9 @@ class Engine:
                               "ORDER BY id DESC LIMIT 1", (s["zone_id"],))
             alert_id = row["id"] if row else None
             fresh = False
-            if alert_id is None and s["hazard_class"] != "clear":
+            if self.registry.is_inactive(s["camera_id"]):
+                alert_id = None  # camera switched off in cameras.json: keep the row, never alert
+            elif alert_id is None and s["hazard_class"] != "clear":
                 alert_id = self._alert_for_zone(s, ts)
                 fresh = True
             self.db.run(
@@ -404,7 +406,8 @@ class Engine:
         hazard_now = reliable[-1]["hazard_class"] if reliable else ("reported" if counted else None)
         flags = []
         if sigs and sigs[-1]["confidence"] < low:
-            flags.append("low_confidence")
+            # model v2: snow below 0.5 means "partly cleaned" - for the inspector, never the contractor
+            flags.append("partly" if sigs[-1]["hazard_class"] in SNOW else "low_confidence")
         if hazard_now == "possible_ice":
             flags.append("possible_ice")
         if any(r["hazard"] in ("ice", "icicles") and r["relevant"] != "reject" for r in reps):
@@ -444,11 +447,17 @@ class Engine:
         """Snow is still there per reliable evidence, and someone can be sent."""
         if not a["contractor_id"]:
             return False
+        has_counted = self.db.one("SELECT 1 FROM reports WHERE alert_id = ? AND counted = 1",
+                                  (a["id"],)) is not None
+        last = self.db.one("SELECT hazard_class, confidence FROM signals WHERE alert_id = ? "
+                           "ORDER BY timestamp DESC, id DESC LIMIT 1", (a["id"],))
+        if last and last["hazard_class"] in SNOW and last["confidence"] < self.cfg.low_confidence:
+            # the zone's latest frame says "partly cleaned" (model v2): the camera alone never dispatches;
+            # a resident's counted report still can
+            return has_counted
         hazard = a["hazard_now"]
         if hazard in SNOW:
             return True
-        has_counted = self.db.one("SELECT 1 FROM reports WHERE alert_id = ? AND counted = 1",
-                                  (a["id"],)) is not None
         return hazard in (None, "reported", "possible_ice") and has_counted
 
     def _open_fields(self, a, now: datetime, deadline: Optional[datetime]) -> dict:

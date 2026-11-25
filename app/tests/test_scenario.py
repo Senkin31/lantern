@@ -246,6 +246,59 @@ def test_watch_waits_for_deadline_and_ongoing_snowfall(make_client, mock_dir):
     assert c.get(f"/alerts/{al}/evidence", params={"format": "json"}).json()["frames"] == []  # last frame 06:00
 
 
+def test_partly_cleaned_stays_with_the_inspector(make_client, mock_dir):
+    """Brief 1.1, model v2: snow with confidence < 0.5 = "partly cleaned", inspector only.
+    What counts is the zone's latest frame: >= 0.5 opens after the deadline, < 0.5 does not."""
+    day = Day(*make_client())
+    c = day.client
+    day.clock.set(riga("09:00"))
+    c.post("/snowfalls", json={"start": utc(riga("01:00")), "end": utc(riga("03:00"))})  # deadline 08:00
+    al = day.signal(SQUARE, "snow", 0.4, 0.35)                      # partly, after the deadline
+    a = day.alert(al)
+    assert a["status"] == "watch" and "partly" in a["inspector_flags"]
+    contractor = lambda: {x["id"] for x in c.get("/alerts", params={"role": "contractor", "contractor": "B"}).json()["alerts"]}
+    assert al not in contractor()
+    assert al in {x["id"] for x in c.get("/inspection/today").json()["alerts"]}  # on the check list
+    day.at("09:30")
+    day.signal(SQUARE, "snow", 0.7, 0.8)                            # not cleaned at all -> open
+    assert day.alert(al)["status"] == "open" and al in contractor()
+
+
+def test_latest_frame_partly_keeps_watch(make_client, mock_dir):
+    """Reliable snow early, but the zone's last frame before the deadline says "partly": no dispatch."""
+    day2 = Day(*make_client())
+    day2.clock.set(riga("06:00"))
+    day2.client.post("/snowfalls", json={"start": utc(riga("01:00")), "end": utc(riga("03:00"))})
+    b = day2.signal(CROSSING, "snow", 0.8, 0.85)
+    day2.at("07:30")
+    day2.signal(CROSSING, "snow", 0.3, 0.4)
+    day2.at("08:30")
+    assert day2.alert(b)["status"] == "watch" and "partly" in day2.alert(b)["inspector_flags"]
+
+
+def test_inactive_camera_is_switched_off(make_client, tmp_path, monkeypatch):
+    """Brief 1.1: cameras with "active": false (Lahti, Oulu) are not on the map and make no alerts."""
+    import json as _json
+
+    from app.main import settings
+    cams = {"cameras": [
+        {"camera_id": "on", "lat": 56.95, "lon": 24.11, "district": "demo-centre",
+         "zones": [{"zone_id": "on:sidewalk", "label": "sidewalk"}]},
+        {"camera_id": "off", "active": False, "lat": 56.96, "lon": 24.12, "district": "demo-centre",
+         "zones": [{"zone_id": "off:road", "label": "sidewalk"}]},
+    ]}
+    f = tmp_path / "cameras.json"
+    f.write_text(_json.dumps(cams), encoding="utf-8")
+    monkeypatch.setattr(settings, "cameras_file", f)
+    monkeypatch.setattr(settings, "cameras_fallback", tmp_path / "none.json")
+    day = Day(*make_client())
+    ids = {cam["camera_id"] for cam in day.client.get("/meta").json()["cameras"]}
+    assert ids == {"on"}
+    day.clock.set(riga("09:00"))
+    assert day.signal("off:road", "snow", 0.9, 0.9) is None
+    assert day.signal("on:sidewalk", "snow", 0.9, 0.9) is not None
+
+
 def test_demo_clock_runs_fast(make_client):
     import time
     client, engine, clock, _ = make_client()

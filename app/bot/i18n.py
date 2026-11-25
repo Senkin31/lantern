@@ -113,6 +113,21 @@ T = {
         "ru": "Спасибо! К сожалению, фото не похоже на опасный тротуар (снег, лёд, сосульки), поэтому "
               "к инспектору оно не ушло. Если мы ошиблись — попробуйте ещё раз с фото поближе.\nКод: {ticket}",
     },
+    "too_many": {
+        "lv": "⏳ Tu šodien jau esi nosūtījis daudz ziņojumu. Paldies! Lūdzu, mēģini vēlāk.",
+        "en": "⏳ You have already sent a lot of reports. Thank you! Please try again later.",
+        "ru": "⏳ Вы уже отправили много сообщений. Спасибо! Попробуйте позже.",
+    },
+    "outside_area": {
+        "lv": "📍 Šī vieta ir ārpus Rīgas. Lantern pieņem ziņojumus tikai par Rīgu.",
+        "en": "📍 This place is outside Riga. Lantern only takes reports about Riga.",
+        "ru": "📍 Это место за пределами Риги. Lantern принимает сообщения только по Риге.",
+    },
+    "same_photo": {
+        "lv": "ℹ️ Šis foto jau bija nosūtīts, tāpēc to neskaitām kā jaunu apstiprinājumu.",
+        "en": "ℹ️ This photo was already sent before, so it doesn't count as a new confirmation.",
+        "ru": "ℹ️ Это фото уже присылали, поэтому оно не считается новым подтверждением.",
+    },
     "send_failed": {
         "lv": "Neizdevās nosūtīt — serveris nav pieejams. Mēģini vēlreiz pēc brīža (✅ Sūtīt) vai zvani 1201.",
         "en": "Could not send — the server is unavailable. Try again in a moment (✅ Send) or call 1201.",

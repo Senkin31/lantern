@@ -18,6 +18,7 @@ from .config import settings
 from .db import Database
 from .engine import PASSABLE, PLACE_TYPES, REPORT_HAZARDS, Engine, RuleError
 from .registry import Registry
+from .spam import SpamGuard, photo_hashes
 from .timeutil import clock, fmt_ts, parse_ts
 from .views import Views
 
@@ -34,6 +35,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
     registry = Registry(settings.cameras_file, settings.cameras_fallback, settings.contractors_file)
     engine = Engine(db, settings, clock, registry)
     views = Views(engine)
+    guard = SpamGuard(db, settings, clock)
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
 
     @contextlib.asynccontextmanager
@@ -54,7 +56,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
 
     app = FastAPI(title="Lantern", version="0.2.0", lifespan=lifespan,
                   description="Winter sidewalk alerts for Riga: camera signals + resident reports.")
-    app.state.engine, app.state.views, app.state.db = engine, views, db
+    app.state.engine, app.state.views, app.state.db, app.state.guard = engine, views, db, guard
 
     # ------------------------------------------------------------------ static
     app.mount("/assets", StaticFiles(directory=STATIC), name="assets")
@@ -163,23 +165,60 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         if ctype not in IMAGE_TYPES:
             raise HTTPException(415, "photo must be a JPEG, PNG, WebP or HEIC image")
 
-        device = (device_id or request.cookies.get(DEVICE_COOKIE) or "").strip()[:64]
-        if not device:
-            device = secrets.token_hex(8)
-        if not request.cookies.get(DEVICE_COOKIE) and not device_id:
-            response.set_cookie(DEVICE_COOKIE, device, max_age=3600 * 24 * 365, httponly=True, samesite="lax")
+        # --- who is sending: only trusted callers (bot / replay on this machine, or INTERNAL_API_KEY)
+        # may name their own device_id; web users always get the random cookie id.
+        host = request.client.host if request.client else None
+        trusted = guard.trusted(host, request.headers.get("x-lantern-key"))
+        cookie = request.cookies.get(DEVICE_COOKIE)
+        if device_id and trusted:
+            device = device_id.strip()[:64]
+        else:
+            device = cookie or secrets.token_hex(8)
+            if not cookie:
+                response.set_cookie(DEVICE_COOKIE, device, max_age=3600 * 24 * 365, httponly=True, samesite="lax")
+        ip_h = guard.ip_hash(host)
 
-        analysis = await asyncio.to_thread(
-            analyze_mod.analyze, settings.analyze_url, settings.analyze_timeout, data, photo.filename or "photo",
-            ctype, comment)
-        name = f"{fmt_ts(clock.now()).replace(':', '').replace('-', '')}_{secrets.token_hex(4)}{IMAGE_TYPES[ctype]}"
-        (settings.upload_dir / name).write_bytes(data)
-        chan = channel if channel in ("web", "telegram", "replay") else ("web" if not device_id else "replay")
+        # --- spam checks, all before the photo is sent to /analyze (see app/spam.py)
+        refused = guard.check(device, ip_h, trusted)
+        if refused:
+            guard.event(device, ip_h, refused["reason"])
+            raise HTTPException(429, detail={"code": refused["reason"], "retry_after": refused["retry_after"],
+                                             "message": "too many reports from this sender, try again later"},
+                                headers={"Retry-After": str(refused["retry_after"])})
+        if not guard.in_service_area(lat, lon):
+            guard.event(device, ip_h, "outside_area")
+            raise HTTPException(422, detail={"code": "outside_area",
+                                             "message": "this location is outside the service area"})
+        sha, dhash = await asyncio.to_thread(photo_hashes, data)
+        ts = parse_ts(timestamp) if timestamp else clock.now()
+        earlier = guard.same_photo(sha, dhash)          # this photo (or a near copy) was already sent
+        repeat = engine.device_duplicate(lat, lon, ts, device)  # this sender already reported this place
+
+        reuse_of, name = None, None
+        if earlier is not None:
+            reuse_of, name = earlier["id"], earlier["photo_path"]  # keep one copy of the file
+            analysis = {"relevant": earlier["relevant"], "score": earlier["ai_score"], "hint": earlier["ai_hint"],
+                        "note": f"same photo as report #{earlier['id']}, not re-analysed"}
+        elif repeat is not None:
+            analysis = {"relevant": repeat["relevant"], "score": repeat["ai_score"], "hint": repeat["ai_hint"],
+                        "note": f"repeat from the same sender for this place (report #{repeat['id']}), not re-analysed"}
+        else:
+            analysis = await asyncio.to_thread(
+                analyze_mod.analyze, settings.analyze_url, settings.analyze_timeout, data,
+                photo.filename or "photo", ctype, comment)
+        if name is None:
+            name = f"{fmt_ts(clock.now()).replace(':', '').replace('-', '')}_{secrets.token_hex(4)}{IMAGE_TYPES[ctype]}"
+            (settings.upload_dir / name).write_bytes(data)
+        chan = channel if channel in ("web", "telegram", "whatsapp", "replay") else ("replay" if device_id else "web")
         rep = engine.ingest_report(
             {"lat": lat, "lon": lon, "passable": passable, "hazard": hazard, "place_type": place_type,
-             "comment": comment, "device_id": device, "timestamp": timestamp}, analysis, name, chan)
+             "comment": comment, "device_id": device, "timestamp": timestamp}, analysis, name, chan,
+            photo_sha256=sha, photo_dhash=dhash, ip_hash=ip_h, reuse_of=reuse_of)
+        if rep["relevant"] == "reject" or rep["duplicate"] or rep["reuse_of"]:
+            guard.strike(device)  # repeated rejects/duplicates -> sender muted for a day
         return {"report_id": rep["id"], "ticket": rep["ticket"], "relevant": rep["relevant"],
                 "alert_id": rep["alert_id"], "duplicate": bool(rep["duplicate"]),
+                "same_photo": rep["reuse_of"] is not None,
                 "ai_hint": rep["ai_hint"], "ai_note": rep["ai_note"]}
 
     @app.get("/reports/ticket/{ticket}", tags=["resident"])
@@ -203,11 +242,42 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
     def moderate(report_id: int, body: Moderation):
         try:
             r = engine.moderate_report(report_id, body.decision, f"inspector:{body.actor}")
+            if body.decision == "reject":
+                guard.strike(r["device_id"])
         except KeyError:
             raise HTTPException(404, "unknown report")
         except RuleError as exc:
             raise HTTPException(409, str(exc))
         return views.report(r, "inspector")
+
+    # ------------------------------------------------------------------ spam (inspector)
+    @app.get("/spam", tags=["inspector"])
+    def spam_summary(role: str = "inspector", hours: float = Query(24, gt=0)):
+        if role != "inspector":
+            raise HTTPException(403, "inspector only")
+        return guard.summary(hours)
+
+    class BlockIn(BaseModel):
+        hours: float = Field(24, gt=0, le=24 * 365)
+        actor: str = "inspector"
+        reason: str = Field("blocked by inspector", max_length=200)
+
+    @app.post("/reports/{report_id}/block-sender", tags=["inspector"])
+    def block_sender(report_id: int, body: BlockIn):
+        r = db.one("SELECT device_id FROM reports WHERE id = ?", (report_id,))
+        if r is None:
+            raise HTTPException(404, "unknown report")
+        guard.block(r["device_id"], body.hours, f"inspector:{body.actor}", body.reason)
+        return guard.summary()
+
+    class UnblockIn(BaseModel):
+        device_id: str
+
+    @app.post("/devices/unblock", tags=["inspector"])
+    def unblock(body: UnblockIn):
+        if not guard.unblock(body.device_id):
+            raise HTTPException(404, "device is not blocked")
+        return guard.summary()
 
     # ------------------------------------------------------------------ alerts
     def _role_scope(role: str, district: Optional[str], contractor: Optional[str]):

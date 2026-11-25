@@ -12,6 +12,7 @@ os.environ["APP_DB"] = str(Path(_tmp) / "import.db")
 os.environ["UPLOAD_DIR"] = str(Path(_tmp) / "uploads")
 os.environ["ANALYZE_URL"] = ""
 os.environ["SNOWFALL_END"] = ""
+os.environ["TRUSTED_HOSTS"] = "127.0.0.1,::1,testclient"
 os.environ["CLEARING_SECONDS"] = ""
 os.environ["HOUR_SECONDS"] = ""
 

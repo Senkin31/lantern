@@ -373,6 +373,13 @@ class LanternBot:
         try:
             resp = self.api.post("/reports", data=fields,
                                  files={"photo": (f"telegram.{ext}", d["photo"], d["mime"])})
+            if resp.status_code in (422, 429):  # spam limits / outside Riga: tell the person, drop the draft
+                detail = (resp.json() if "json" in resp.headers.get("content-type", "") else {}).get("detail")
+                code = detail.get("code") if isinstance(detail, dict) else None
+                if code in ("outside_area",) or resp.status_code == 429:
+                    self.drafts.pop(chat_id, None)
+                    self.send(chat_id, t("outside_area" if code == "outside_area" else "too_many", L))
+                    return
             if resp.status_code != 201:
                 raise httpx.HTTPStatusError(f"HTTP {resp.status_code}: {resp.text[:200]}",
                                             request=resp.request, response=resp)
@@ -397,6 +404,8 @@ class LanternBot:
             text = t("accepted", L, ticket=ticket)
             if result.get("alert_id") and self._merged(ticket):
                 text += "\n\n" + t("merged", L)
+            if result.get("same_photo"):
+                text += "\n\n" + t("same_photo", L)
             self.send(chat_id, text)
         log.info("report %s from chat sent: %s", ticket, rel)
 
@@ -518,7 +527,8 @@ def main() -> None:
         sys.exit(2)
     api_url = env("LANTERN_API_URL", "http://127.0.0.1:8000")
     tg = Telegram(token, env("TELEGRAM_API_BASE", "https://api.telegram.org"))
-    api = httpx.Client(base_url=api_url)
+    key = env("INTERNAL_API_KEY", "")  # lets the server trust our hashed device ids from another host
+    api = httpx.Client(base_url=api_url, headers={"X-Lantern-Key": key} if key else None)
     state = State(ROOT / env("BOT_STATE_FILE", "data/bot_state.json"))
     LanternBot(tg, api, state).run_forever()
 

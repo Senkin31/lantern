@@ -166,22 +166,22 @@ def test_one_device_one_vote_and_review(make_client, mock_dir):
     client, engine, clock, verdicts = make_client()
     clock.set(parse_ts("2026-11-25T12:00:00Z"))
     client.post("/settings", json={"snowfall_end": "2026-11-25T05:00:00Z", "hour_seconds": 3600})
-    photo = (mock_dir / "photos" / "report_snow_1.jpg").read_bytes()
+    photos = {p.name: p.read_bytes() for p in (mock_dir / "photos").glob("report_*.jpg")}
 
-    def report(device, passable="no", name="a.jpg", lat=56.9600, lon=24.1300):
+    def report(device, passable="no", name="a.jpg", lat=56.9600, lon=24.1300, photo="report_snow_1.jpg"):
         r = client.post("/reports", data={"lat": lat, "lon": lon, "passable": passable, "device_id": device,
                                           "place_type": "sidewalk"},
-                        files={"photo": (name, photo, "image/jpeg")})
+                        files={"photo": (name, photos[photo], "image/jpeg")})
         assert r.status_code == 201, r.text
         return r.json()
 
     r1 = report("dev-x")
-    r2 = report("dev-x")
+    r2 = report("dev-x", photo="report_snow_2.jpg")
     assert r2["alert_id"] == r1["alert_id"] and r2["duplicate"]
     a = client.get(f"/alerts/{r1['alert_id']}").json()
     assert a["report_count"] == 1 and a["status"] == "open"  # deadline long passed -> straight to contractor
     verdicts["unsure.jpg"] = "review"
-    r3 = report("dev-y", name="unsure.jpg")
+    r3 = report("dev-y", name="unsure.jpg", photo="report_stop.jpg")
     a = client.get(f"/alerts/{r3['alert_id']}").json()
     assert a["report_count"] == 1 and "review_report" in a["inspector_flags"]
     m = client.post(f"/reports/{r3['report_id']}/moderate", json={"decision": "accept"})

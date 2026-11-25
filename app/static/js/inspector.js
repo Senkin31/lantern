@@ -62,6 +62,7 @@
       if (S.tab === "reports") {
         jobs.push(api("/reports?role=inspector&relevant=review").then((r) => { S.data.reviewReports = r; }));
         jobs.push(api("/reports?role=inspector&relevant=reject").then((r) => { S.data.rejectReports = r; }));
+        jobs.push(api("/spam?role=inspector").then((r) => { S.data.spam = r; }));
       }
       if (S.tab === "stats") jobs.push(api("/stats/response?within_hours=" + encodeURIComponent(S.withinHours)).then((r) => { S.data.stats = r; }));
       if (S.selected) {
@@ -278,6 +279,23 @@
         await refresh();
       } catch (e) { L$.toast(e.message, true); b.disabled = false; }
     }));
+    el.querySelectorAll("[data-block]").forEach((b) => b.addEventListener("click", async () => {
+      if (!confirm(t("blockAsk"))) return;
+      b.disabled = true;
+      try {
+        await api(`/reports/${b.dataset.block}/block-sender`, { json: { hours: 24, actor: ACTOR } });
+        L$.toast(t("saved"));
+        await refresh();
+      } catch (e) { L$.toast(e.message, true); b.disabled = false; }
+    }));
+    el.querySelectorAll("[data-unblock]").forEach((b) => b.addEventListener("click", async () => {
+      b.disabled = true;
+      try {
+        await api("/devices/unblock", { json: { device_id: b.dataset.unblock } });
+        L$.toast(t("saved"));
+        await refresh();
+      } catch (e) { L$.toast(e.message, true); b.disabled = false; }
+    }));
     const wh = el.querySelector("#withinH");
     if (wh) wh.addEventListener("change", () => { const v = parseFloat(wh.value); if (v > 0) { S.withinHours = v; refresh(); } });
   }
@@ -335,10 +353,12 @@
         <div class="small">${esc(t("ps_" + r.passable))} · ${esc(L$.hazard(r.hazard))} · ${esc(L$.place(r.place_type))}</div>
         ${r.comment ? `<div class="small">“${esc(r.comment)}”</div>` : ""}
         <div class="small muted">${esc(t("aiSays"))}: ${esc(ai)}${r.ai_note ? ` — ${esc(r.ai_note)}` : ""}</div>
+        ${r.same_photo_as ? `<div class="chip warn">${esc(t("samePhotoAs", { n: r.same_photo_as }))}</div>` : ""}
         ${r.alert_id ? `<div class="small"><a href="#" data-alert="${r.alert_id}">${esc(t("alert"))} #${r.alert_id}</a></div>` : ""}
         ${showActions ? `<div class="actions" style="margin-top:6px">
           <button class="btn good" type="button" data-moderate="accept" data-id="${r.id}">${esc(t("accept"))}</button>
           ${r.relevant !== "reject" ? `<button class="btn bad" type="button" data-moderate="reject" data-id="${r.id}">${esc(t("reject"))}</button>` : ""}
+          <button class="btn" type="button" data-block="${r.id}">${esc(t("blockSender"))}</button>
         </div>` : ""}
       </div></div>`;
   }
@@ -350,7 +370,26 @@
     return `<div class="panel-head"><h2>${esc(t("reviewQueue"))} (${pending.length})</h2></div>
       ${pending.length ? pending.map((r) => modHTML(r, true)).join("") : `<div class="empty">${esc(t("noReview"))}</div>`}
       <div class="panel-head" style="margin-top:14px"><h2>${esc(t("rejected"))} (${rj.length})</h2></div>
-      ${rj.length ? rj.map((r) => modHTML(r, true)).join("") : `<div class="empty">${esc(t("noRejected"))}</div>`}`;
+      ${rj.length ? rj.map((r) => modHTML(r, true)).join("") : `<div class="empty">${esc(t("noRejected"))}</div>`}
+      ${spamHTML()}`;
+  }
+
+  // Spam protection: what was refused or not counted in the last 24 h, and who is blocked (app/spam.py)
+  function spamHTML() {
+    const sp = S.data.spam;
+    if (!sp) return "";
+    const ev = Object.entries(sp.events || {}).filter(([, n]) => n > 0);
+    const L = sp.limits;
+    return `<div class="panel-head" style="margin-top:14px"><h2>${esc(t("spamTitle"))}</h2></div>
+      ${ev.length ? `<table class="tbl"><tbody>${ev.map(([k, n]) => `<tr><td>${esc(t("sp_" + k))}</td><td class="num">${n}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="empty">${esc(t("none"))}</div>`}
+      <div class="small muted" style="margin:6px 0">${esc(t("spLimits", { h: L.device_per_hour, d: L.device_per_day, ip: L.ip_per_hour, bh: L.auto_block_hours, r: L.auto_block_rejects, dup: L.auto_block_duplicates }))}</div>
+      <h3 class="small" style="margin-top:10px">${esc(t("blockedSenders"))} (${sp.blocked.length})</h3>
+      ${sp.blocked.length ? sp.blocked.map((b) => `<div class="mod"><div></div><div>
+          <div><b>${esc(b.device_id.slice(0, 8))}</b> · ${esc(b.reason || "")}</div>
+          <div class="small muted">${esc(b.blocked_by || "")} · ${esc(t("until"))} ${esc(L$.fmtTime(b.blocked_until))}</div>
+          <div class="actions" style="margin-top:6px"><button class="btn" type="button" data-unblock="${esc(b.device_id)}">${esc(t("unblock"))}</button></div>
+        </div></div>`).join("") : `<div class="empty">${esc(t("noBlocked"))}</div>`}`;
   }
 
   function statsTable(rows, nameKey) {

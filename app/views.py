@@ -136,6 +136,7 @@ class Views:
                 "ai_score": r["ai_score"], "ai_hint": r["ai_hint"], "ai_note": r["ai_note"],
                 "counted": bool(r["counted"]), "duplicate": bool(r["duplicate"]),
                 "moderated_by": r["moderated_by"], "device": (r["device_id"] or "")[:8],
+                "same_photo_as": r["reuse_of"],
             })
         return d
 

@@ -25,6 +25,8 @@
       need: "Vēl vajag: {list}", need_photo: "foto", need_loc: "vietu", need_pass: "atbildi, vai var paiet",
       err_send: "Neizdevās nosūtīt. Pārbaudi internetu un mēģini vēlreiz.",
       err_server: "Serveris atbildēja ar kļūdu: {msg}",
+      err_too_many: "Tu jau esi nosūtījis daudz ziņojumu. Paldies! Lūdzu, mēģini vēlāk.",
+      err_outside: "Šī vieta ir ārpus Rīgas. Pārvieto atzīmi kartē uz Rīgu.",
       done_ok_t: "Paldies, signāls saņemts!",
       done_ok: "Pilsētas inspektors redzēs tavu ziņojumu. Saglabā kodu, lai pārbaudītu statusu.",
       done_review_t: "Paldies, signāls saņemts!",
@@ -68,6 +70,8 @@
       need: "Still needed: {list}", need_photo: "a photo", need_loc: "the place", need_pass: "whether people can get through",
       err_send: "Could not send. Check your connection and try again.",
       err_server: "The server returned an error: {msg}",
+      err_too_many: "You have already sent a lot of reports. Thank you! Please try again later.",
+      err_outside: "This place is outside Riga. Move the pin on the map to Riga.",
       done_ok_t: "Thank you, signal received!",
       done_ok: "The city inspector will see your report. Keep the code to check its status.",
       done_review_t: "Thank you, signal received!",
@@ -111,6 +115,8 @@
       need: "Ещё нужно: {list}", need_photo: "фото", need_loc: "место", need_pass: "можно ли пройти",
       err_send: "Не удалось отправить. Проверьте интернет и попробуйте ещё раз.",
       err_server: "Сервер ответил ошибкой: {msg}",
+      err_too_many: "Вы уже отправили много сообщений. Спасибо! Попробуйте позже.",
+      err_outside: "Это место за пределами Риги. Передвиньте метку на карте в Ригу.",
       done_ok_t: "Спасибо, сигнал принят!",
       done_ok: "Инспектор города увидит ваше сообщение. Сохраните код, чтобы проверить статус.",
       done_review_t: "Спасибо, сигнал принят!",
@@ -303,7 +309,11 @@
       const resp = await fetch("/reports", { method: "POST", body: fd, credentials: "same-origin" });
       const data = await resp.json().catch(() => ({}));
       if (resp.status !== 201) {
-        err.textContent = tr("err_server", { msg: typeof data.detail === "string" ? data.detail : resp.status });
+        // spam limits (429) and "outside Riga" (422) come back as {detail: {code, message}}
+        const code = data.detail && typeof data.detail === "object" ? data.detail.code : null;
+        err.textContent = resp.status === 429 ? tr("err_too_many")
+          : code === "outside_area" ? tr("err_outside")
+          : tr("err_server", { msg: typeof data.detail === "string" ? data.detail : resp.status });
         err.hidden = false;
         return;
       }

@@ -240,8 +240,19 @@ class Engine:
                 best, best_d = a, d
         return best
 
-    def ingest_report(self, r: dict, analysis: dict, photo_path: Optional[str], channel: str):
-        """Store a resident report; rejected ones are kept but never become alerts."""
+    def device_duplicate(self, lat: float, lon: float, ts: datetime, device_id: str):
+        """The earlier report of this device on the alert this one would join (one vote per device)."""
+        target = self.find_merge_target(lat, lon, ts)
+        if target is None:
+            return None
+        return self.db.one("SELECT * FROM reports WHERE alert_id = ? AND device_id = ? ORDER BY id LIMIT 1",
+                           (target["id"], device_id))
+
+    def ingest_report(self, r: dict, analysis: dict, photo_path: Optional[str], channel: str, *,
+                      photo_sha256: Optional[str] = None, photo_dhash: Optional[str] = None,
+                      ip_hash: Optional[str] = None, reuse_of: Optional[int] = None):
+        """Store a resident report; rejected ones are kept but never become alerts.
+        A photo that was already sent (reuse_of) is stored but never counts as a confirmation."""
         ts = parse_ts(r.get("timestamp")) or self.clock.now()
         now = fmt_ts(self.clock.now())
         relevant = analysis.get("relevant") if analysis.get("relevant") in RELEVANT else "review"
@@ -260,18 +271,19 @@ class Engine:
                         zone_id=None, camera_id=None, district=district, lat=r["lat"], lon=r["lon"],
                         polygon=None, place_type=r.get("place_type") or "sidewalk", near_sensitive=False,
                         first_seen=ts, actor="system", note="resident report")
-            counted = relevant == "accept" and not duplicate
+            counted = relevant == "accept" and not duplicate and reuse_of is None
             ticket = new_ticket()
             while self.db.one("SELECT 1 FROM reports WHERE ticket = ?", (ticket,)):
                 ticket = new_ticket()
             report_id = self.db.run(
                 "INSERT INTO reports(alert_id, ticket, channel, photo_path, lat, lon, passable, hazard, place_type, "
-                "comment, device_id, timestamp, relevant, ai_score, ai_hint, ai_note, counted, duplicate, received_at) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "comment, device_id, timestamp, relevant, ai_score, ai_hint, ai_note, counted, duplicate, received_at, "
+                "photo_sha256, photo_dhash, ip_hash, reuse_of) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (alert_id, ticket, channel, photo_path, r["lat"], r["lon"], r["passable"], r.get("hazard"),
                  r.get("place_type"), r.get("comment") or "", r["device_id"], fmt_ts(ts), relevant,
                  analysis.get("score"), analysis.get("hint"), analysis.get("note"),
-                 1 if counted else 0, 1 if duplicate else 0, now))
+                 1 if counted else 0, 1 if duplicate else 0, now, photo_sha256, photo_dhash, ip_hash, reuse_of))
             if alert_id is not None:
                 self._bump_evidence(alert_id, ts)
                 self.recompute(alert_id)

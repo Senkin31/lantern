@@ -68,6 +68,24 @@ Everything lives in [engine.py](engine.py).
 - **Privacy.** The contractor and export responses are filtered on the server: no `frame_url`, no device ids and no low-confidence frames.
 - **Analysis.** `/analyze` gets a 10 s timeout; on timeout or error the report goes to `review`. While `ANALYZE_URL` is empty, a stub answers `accept`, so the irrelevant-photo report is accepted until the model is connected. `reject` reports are stored but never become alerts, and the inspector can still rescue one from the Reports tab.
 
+## Spam protection
+
+The rules are in [spam.py](spam.py). They cover every channel (web form, Telegram, and later WhatsApp), and every check runs **before** the photo goes to `/analyze`, so spam costs no model calls.
+
+| Check | Default | What happens |
+| --- | --- | --- |
+| Same place, same sender | one vote per sender per alert | Stored, but not counted and not re-analysed |
+| Same photo again (exact copy, or a resized/re-compressed one via a 64-bit perceptual hash) | 7 days | Stored, but never counted as a new confirmation, even from another phone |
+| Too many reports per sender | 6 per hour, 20 per day | `429`, "try again later" |
+| Too many reports from one network (web form) | 30 per hour | `429`. This backstops spammers who clear their cookies. |
+| Outside the service area | Riga bounding box | `422 outside_area` |
+| Auto-mute | 3 rejected photos or 5 repeats in 24 h | Sender blocked for 24 h |
+| Inspector | "Block sender" / "Unblock" in the Reports tab | Manual block, plus a 24 h summary of what was refused |
+
+**Identity.** Telegram (and later WhatsApp) sends a stable hashed user id. The web form gets a random cookie, and only trusted callers (`TRUSTED_HOSTS`, or the `INTERNAL_API_KEY` header) may name their own `device_id`. IPs are stored only as salted hashes. All limits are in `.env`.
+
+Example: one phone sends 99 pictures of the same spot. 6 are stored, the place still has 1 vote, `/analyze` is called once, the other 93 are refused, and the sender is muted for a day. This case is in `tests/test_spam.py`.
+
 ## API
 
 | Method | Path | |
@@ -86,6 +104,9 @@ Everything lives in [engine.py](engine.py).
 | GET/POST | `/settings` | `snowfall_end` (`"now"` works), `hour_seconds`, `clearing_hours`, `clearing_seconds` |
 | POST | `/admin/reset` | demo only |
 | GET | `/meta` | cameras, contractors, tile URL, credits, source link |
+| GET | `/spam?role=inspector` | what was refused / not counted in 24 h, blocked senders, limits |
+| POST | `/reports/{id}/block-sender` | `{"hours": 24, "reason": "..."}`: block the sender of that report |
+| POST | `/devices/unblock` | `{"device_id": "..."}` |
 
 ## Tests
 

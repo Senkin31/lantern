@@ -32,6 +32,10 @@ Commands: `/start`, `/status` (my tickets), `/lang` (LV / EN / RU), `/cancel`, `
 - The salt comes from `TELEGRAM_DEVICE_SALT` or is generated once into `data/bot_state.json`.
 - That file also holds the chat → tickets map used for status messages. It stays on the bot host, and `data/` is gitignored.
 
+## Limits
+
+The server's spam protection also applies to the bot: 6 reports per hour and 20 per day per person, one vote per place, and the same photo never counts twice. The bot answers politely ("you have already sent a lot of reports…") and drops the draft. Details: [app/README.md](../README.md#spam-protection).
+
 ## Settings
 
 | Variable | Default | |
@@ -40,6 +44,7 @@ Commands: `/start`, `/status` (my tickets), `/lang` (LV / EN / RU), `/cancel`, `
 | `LANTERN_API_URL` | `http://127.0.0.1:8000` | Lantern app |
 | `TELEGRAM_API_BASE` | `https://api.telegram.org` | the tests point this at a fake API |
 | `TELEGRAM_DEVICE_SALT` | random, saved in state | keep it stable, otherwise one-vote-per-device resets |
+| `INTERNAL_API_KEY` | — | only if the bot runs on another host than the app: same value on both sides, so the app trusts the bot's hashed device ids |
 | `BOT_STATE_FILE` | `data/bot_state.json` | |
 
 ## Tests

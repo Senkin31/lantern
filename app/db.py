@@ -75,7 +75,11 @@ CREATE TABLE IF NOT EXISTS reports (
     counted       INTEGER NOT NULL DEFAULT 0,  -- counts towards urgency (accepted, first vote of device)
     duplicate     INTEGER NOT NULL DEFAULT 0,  -- same device already voted on this alert
     moderated_by  TEXT,
-    received_at   TEXT NOT NULL
+    received_at   TEXT NOT NULL,
+    photo_sha256  TEXT,                  -- spam: exact copy
+    photo_dhash   TEXT,                  -- spam: near copy (64-bit difference hash)
+    ip_hash       TEXT,                  -- spam: salted hash, never the raw IP
+    reuse_of      INTEGER                -- same photo as this earlier report
 );
 CREATE INDEX IF NOT EXISTS idx_reports_alert ON reports(alert_id);
 
@@ -89,6 +93,23 @@ CREATE TABLE IF NOT EXISTS status_history (
     note        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_history_alert ON status_history(alert_id);
+
+CREATE TABLE IF NOT EXISTS devices (      -- blocked senders (spam)
+    device_id     TEXT PRIMARY KEY,
+    blocked_until TEXT NOT NULL,
+    blocked_by    TEXT,
+    reason        TEXT,
+    at            TEXT
+);
+
+CREATE TABLE IF NOT EXISTS spam_events (  -- refused attempts (no photo kept)
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT,
+    ip_hash   TEXT,
+    reason    TEXT NOT NULL,
+    at        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_spam_at ON spam_events(at);
 
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
@@ -112,14 +133,29 @@ class Database:
         if str(self.path) != ":memory:":
             conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(SCHEMA)
+        self._migrate(conn)
         return conn
+
+    # columns added after the first release; ALTER keeps existing databases working
+    MIGRATIONS = (("reports", "photo_sha256", "TEXT"), ("reports", "photo_dhash", "TEXT"),
+                  ("reports", "ip_hash", "TEXT"), ("reports", "reuse_of", "INTEGER"))
+
+    def _migrate(self, conn) -> None:
+        for table, col, typ in self.MIGRATIONS:
+            cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+            if col not in cols:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_reports_device ON reports(device_id, received_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_reports_sha ON reports(photo_sha256)")
 
     def reset(self) -> None:
         with self.lock:
             self.conn.executescript(
                 "DROP TABLE IF EXISTS status_history; DROP TABLE IF EXISTS signals;"
+                "DROP TABLE IF EXISTS spam_events; DROP TABLE IF EXISTS devices;"
                 "DROP TABLE IF EXISTS reports; DROP TABLE IF EXISTS alerts;")
             self.conn.executescript(SCHEMA)
+            self._migrate(self.conn)
 
     def q(self, sql: str, args=()) -> list:
         with self.lock:

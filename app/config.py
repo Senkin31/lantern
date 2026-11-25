@@ -76,5 +76,26 @@ class Settings:
         self.source_url = env("SOURCE_URL", "https://github.com/Senkin31/lantern")
         self.tick_seconds = env_float("TICK_SECONDS", 1.0)
 
+        # spam protection (app/spam.py); real time, not demo "rule hours"
+        self.rate_device_hour = int(env_float("RATE_DEVICE_HOUR", 6))
+        self.rate_device_day = int(env_float("RATE_DEVICE_DAY", 20))
+        self.rate_ip_hour = int(env_float("RATE_IP_HOUR", 30))
+        self.auto_block_rejects = int(env_float("AUTO_BLOCK_REJECTS", 3))
+        self.auto_block_duplicates = int(env_float("AUTO_BLOCK_DUPLICATES", 5))
+        self.auto_block_hours = env_float("AUTO_BLOCK_HOURS", 24.0)
+        self.same_photo_days = env_float("SAME_PHOTO_DAYS", 7.0)
+        self.dhash_distance = int(env_float("DHASH_DISTANCE", 5))
+        # lat_min,lon_min,lat_max,lon_max - reports outside are refused; empty = no check. Default: Riga
+        area = env("SERVICE_AREA", "56.85,23.90,57.10,24.35")
+        try:
+            self.service_area = tuple(float(x) for x in area.split(",")) if area.strip() else None
+            if self.service_area is not None and len(self.service_area) != 4:
+                self.service_area = None
+        except ValueError:
+            self.service_area = None
+        # callers allowed to pass their own device_id (bot, replay script on this machine)
+        self.trusted_hosts = {h.strip() for h in env("TRUSTED_HOSTS", "127.0.0.1,::1").split(",") if h.strip()}
+        self.internal_api_key = env("INTERNAL_API_KEY", "")
+
 
 settings = Settings()

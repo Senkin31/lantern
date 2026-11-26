@@ -79,3 +79,31 @@ def test_sections_endpoint(make_client, tmp_path, monkeypatch, mock_dir):
     assert body["source"] == "osm" and body["sections"][0]["alert_ids"] == [al]
     assert body["sections"][0]["name"] == "Demo iela"
     assert client.get("/sections", params={"role": "contractor"}).status_code == 403
+
+
+def _f(fid, coords, name="A iela", kind="street"):
+    return {"type": "Feature", "properties": {"id": fid, "name": name, "kind": kind},
+            "geometry": {"type": "LineString", "coordinates": coords}}
+
+
+def test_pieces_are_glued_junction_to_junction():
+    from app.osm_sidewalks import merge_chains
+    # A iela in three pieces (cut where a dropped crosswalk touched it), B iela crossing at the far end
+    feats = [_f("a1", [[24.1000, 56.95], [24.1005, 56.95]]), _f("a3", [[24.1015, 56.95], [24.1010, 56.95]]),
+             _f("a2", [[24.1005, 56.95], [24.1010, 56.95]]),
+             _f("b1", [[24.1015, 56.9495], [24.1015, 56.95]], name="B iela"),
+             _f("b2", [[24.1015, 56.95], [24.1015, 56.9505]], name="B iela")]
+    out = merge_chains(feats)
+    a = [f for f in out if f["properties"]["name"] == "A iela"]
+    assert len(a) == 1 and len(a[0]["geometry"]["coordinates"]) == 4      # one block, in order
+    assert sorted(c[0] for c in a[0]["geometry"]["coordinates"]) == [24.1000, 24.1005, 24.1010, 24.1015]
+    assert len([f for f in out if f["properties"]["name"] == "B iela"]) == 2   # a real junction (3 ends) stays
+
+
+def test_short_section_grows_along_the_same_street():
+    # 30 m stub of A iela at a junction; A iela goes on straight, C iela turns off
+    w = Sidewalks([_f("s", [[24.1000, 56.95], [24.1005, 56.95]]), _f("n", [[24.1005, 56.95], [24.1015, 56.95]]),
+                   _f("c", [[24.1005, 56.95], [24.1005, 56.951]], name="C iela")])
+    s = sections([alert(1, 56.95003, 24.1002, zone="cam:z")], {}, w)
+    assert s[0]["block_m"] < 40 and s[0]["length_m"] >= 80                  # painted as a street, not a dot
+    assert all(p[0] == 56.95 for p in s[0]["coords"])                        # it went on along A iela

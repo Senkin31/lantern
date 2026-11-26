@@ -13,7 +13,7 @@ import json
 import math
 import urllib.parse
 import urllib.request
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from .config import ROOT
@@ -97,16 +97,66 @@ def blocks(osm: dict, keep_paths: bool = False) -> list:
     return feats
 
 
+def merge_chains(feats: list) -> list:
+    """Glue pieces that meet where nothing else joins (a crosswalk or path that was dropped, a way boundary)
+    and share kind and name, so a block really runs junction to junction; then cut chains at MAX_BLOCK_M."""
+    ends = [(tuple(f["geometry"]["coordinates"][0]), tuple(f["geometry"]["coordinates"][-1])) for f in feats]
+    at = defaultdict(list)
+    for i, (a, b) in enumerate(ends):
+        at[a].append((i, 0))
+        at[b].append((i, 1))
+
+    def sig(f):
+        return f["properties"].get("kind"), f["properties"].get("name")
+    link = {}
+    for lst in at.values():
+        if len(lst) == 2:
+            (i, ei), (j, ej) = lst
+            if i != j and sig(feats[i]) == sig(feats[j]):
+                link[(i, ei)], link[(j, ej)] = (j, ej), (i, ei)
+    seen, out = set(), []
+    for i in range(len(feats)):
+        if i in seen:
+            continue
+        cur, end, steps = i, 0, 0
+        while (cur, end) in link and steps <= len(feats):  # walk back to the head of the chain
+            j, ej = link[(cur, end)]
+            if j == i:
+                break  # a closed loop: start anywhere
+            cur, end, steps = j, 1 - ej, steps + 1
+        coords, entry = [], end
+        while True:
+            seen.add(cur)
+            c = feats[cur]["geometry"]["coordinates"]
+            seq = c if entry == 0 else c[::-1]
+            coords.extend(seq if not coords else seq[1:])
+            nxt = link.get((cur, 1 - entry))
+            if not nxt or nxt[0] in seen:
+                break
+            cur, entry = nxt
+        props = dict(feats[i]["properties"])
+        parts = _split_long([(lat, lon) for lon, lat in coords])
+        for k, part in enumerate(parts, 1):
+            out.append({"type": "Feature", "properties": {**props, "id": props["id"] + (f"~{k}" if len(parts) > 1 else "")},
+                        "geometry": {"type": "LineString", "coordinates": [[lon, lat] for lat, lon in part]}})
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--bbox", default=",".join(map(str, DEFAULT_BBOX)), help="south,west,north,east")
     ap.add_argument("--out", default="config/riga_sidewalks.geojson")
     ap.add_argument("--keep-paths", action="store_true", help="also keep park and courtyard paths")
+    ap.add_argument("--remerge", action="store_true", help="no download: glue the blocks of the existing --out file")
     a = ap.parse_args()
     bbox = tuple(float(x) for x in a.bbox.split(","))
-    osm = fetch(bbox)
-    feats = blocks(osm, a.keep_paths)
     out = Path(a.out) if Path(a.out).is_absolute() else ROOT / a.out
+    if a.remerge:
+        old = json.loads(out.read_text(encoding="utf-8"))
+        feats = merge_chains(old["features"])
+        bbox = (old["bbox"][1], old["bbox"][0], old["bbox"][3], old["bbox"][2]) if old.get("bbox") else bbox
+    else:
+        feats = merge_chains(blocks(fetch(bbox), a.keep_paths))
     out.parent.mkdir(parents=True, exist_ok=True)
     fc = {"type": "FeatureCollection",
           "attribution": "(c) OpenStreetMap contributors, ODbL 1.0, https://www.openstreetmap.org/copyright",

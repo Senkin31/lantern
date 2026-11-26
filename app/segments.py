@@ -20,6 +20,7 @@ PREFER_SIDEWALK_M = 15  # a mapped sidewalk this close wins over the street cent
 CELL_M = 100.0
 MIN_RESIDENTS = 2
 CLUSTER_M = 80.0
+MIN_SECTION_M = 80.0    # a painted section shorter than this grows along the same street (else it looks like a dot)
 
 RANK = {"reopened": 5, "high": 4, "medium": 3, "low": 2, "watch": 1}
 
@@ -42,6 +43,7 @@ class Sidewalks:
         self.kx = 111_320 * math.cos(math.radians(self.lat0))
         self.ky = 111_320
         self.grid = defaultdict(list)
+        self.at = defaultdict(list)  # block end point -> blocks that end there (the junctions)
         for f in features:
             coords = f["geometry"]["coordinates"]
             if f["geometry"]["type"] != "LineString" or len(coords) < 2:
@@ -60,6 +62,45 @@ class Sidewalks:
                     cells.add((int(x // CELL_M), int(y // CELL_M)))
             for c in cells:
                 self.grid[c].append(idx)
+            for end in (coords[0], coords[-1]):
+                self.at[(round(end[1], 6), round(end[0], 6))].append(idx)
+
+    def extend(self, b: dict, min_m: float = MIN_SECTION_M):
+        """Grow a short block through its junctions along the same street (same name, or same kind when
+        unnamed), taking the straightest way on, until it is min_m long. Returns (latlon list, metres)."""
+        coords, length, used = [list(p) for p in b["latlon"]], b["length_m"], {b["id"]}
+        for _ in range(8):
+            if length >= min_m:
+                break
+            grown = False
+            for tail in (True, False):
+                end, prev = (coords[-1], coords[-2]) if tail else (coords[0], coords[1])
+                key = (round(end[0], 6), round(end[1], 6))
+                cands = [self.blocks[i] for i in self.at.get(key, ()) if self.blocks[i]["id"] not in used]
+                same = [c for c in cands if (c["name"] == b["name"] if b["name"] else c["kind"] == b["kind"] and not c["name"])]
+                if not same:
+                    continue
+
+                def oriented(c):
+                    ll = c["latlon"]
+                    return ll if (round(ll[0][0], 6), round(ll[0][1], 6)) == key else ll[::-1]
+
+                def turn(c):
+                    nxt = oriented(c)[1]
+                    (x0, y0), (x1, y1), (x2, y2) = self.xy(*prev), self.xy(*end), self.xy(*nxt)
+                    a1, a2 = math.atan2(y1 - y0, x1 - x0), math.atan2(y2 - y1, x2 - x1)
+                    return abs((a2 - a1 + math.pi) % (2 * math.pi) - math.pi)
+                pick = min(same, key=turn)
+                seq = [list(p) for p in oriented(pick)]
+                coords = coords + seq[1:] if tail else seq[::-1][:-1] + coords
+                used.add(pick["id"])
+                length += pick["length_m"]
+                grown = True
+                if length >= min_m:
+                    break
+            if not grown:
+                break
+        return coords, length
 
     @classmethod
     def load(cls, path: Optional[Path]) -> Optional["Sidewalks"]:
@@ -132,8 +173,9 @@ def sections(alerts: list, devices: dict, sidewalks: Optional[Sidewalks]) -> lis
             s = _summary(group, devices)
             if _lit(s):
                 b = blocks[bid]
-                out.append({"id": bid, "name": b["name"], "kind": b["kind"], "length_m": round(b["length_m"]),
-                            "coords": b["latlon"], "source": "osm", **s})
+                coords, length = sidewalks.extend(b)
+                out.append({"id": bid, "name": b["name"], "kind": b["kind"], "length_m": round(length),
+                            "block_m": round(b["length_m"]), "coords": coords, "source": "osm", **s})
         return out
     # fallback without street data: join alerts that lie within CLUSTER_M of each other
     parent = list(range(len(alerts)))

@@ -1,0 +1,81 @@
+"""Street sections (app/segments.py): the council sees a piece of street, not only dots."""
+import json
+
+from app.segments import Sidewalks, sections
+
+# a straight 200 m block along Kaļķu iela-ish, and a parallel sidewalk 10 m north of it
+STREET = [[24.1100, 56.9500], [24.1133, 56.9500]]
+SIDEWALK = [[24.1100, 56.95009], [24.1133, 56.95009]]
+
+
+def walks(with_sidewalk=False):
+    feats = [{"type": "Feature", "properties": {"id": "s1", "name": "Test iela", "kind": "street"},
+              "geometry": {"type": "LineString", "coordinates": STREET}}]
+    if with_sidewalk:
+        feats.append({"type": "Feature", "properties": {"id": "w1", "name": "Test iela", "kind": "sidewalk"},
+                      "geometry": {"type": "LineString", "coordinates": SIDEWALK}})
+    return Sidewalks(feats)
+
+
+def alert(i, lat, lon, zone=None, level="medium", status="open"):
+    return {"id": i, "lat": lat, "lon": lon, "zone_id": zone, "urgency_level": level, "status": status}
+
+
+def test_snapping_prefers_the_mapped_sidewalk():
+    w = walks(with_sidewalk=True)
+    assert w.nearest(56.95006, 24.1110)["id"] == "w1"       # 3 m from the sidewalk, 7 m from the street
+    assert w.nearest(56.95001, 24.1110)["id"] == "w1"       # sidewalk within 15 m wins
+    assert w.nearest(56.9510, 24.1110) is None              # 100 m away: no block
+
+
+def test_camera_lights_a_block_one_resident_does_not():
+    w = walks()
+    one = sections([alert(1, 56.95005, 24.1110)], {1: {"dev-a"}}, w)
+    assert one == []                                        # a single complaint stays a dot
+    cam = sections([alert(2, 56.95005, 24.1120, zone="cam:sidewalk", level="high")], {}, w)
+    assert len(cam) == 1 and cam[0]["camera"] and cam[0]["name"] == "Test iela" and cam[0]["urgency_level"] == "high"
+    assert 190 <= cam[0]["length_m"] <= 210
+
+
+def test_two_residents_on_one_block_light_it_in_the_worst_colour():
+    w = walks()
+    alerts = [alert(1, 56.95005, 24.1105, level="low"), alert(2, 56.94996, 24.1125, level="medium"),
+              alert(3, 56.9550, 24.1200, level="high")]      # far away, not on the block
+    s = sections(alerts, {1: {"dev-a"}, 2: {"dev-b"}, 3: {"dev-c"}}, w)
+    assert len(s) == 1 and s[0]["alert_ids"] == [1, 2] and s[0]["residents"] == 2
+    assert s[0]["urgency_level"] == "medium" and not s[0]["camera"]
+    same = sections(alerts[:2], {1: {"dev-a"}, 2: {"dev-a"}}, w)
+    assert same == []                                       # one person, two dots: still one vote
+
+
+def test_reopened_wins_and_fallback_without_street_data():
+    w = walks()
+    s = sections([alert(1, 56.95005, 24.1105, zone="c:z", level="high"),
+                  alert(2, 56.95005, 24.1115, level="low", status="reopened")], {}, w)
+    assert s[0]["status"] == "reopened"
+    pts = [alert(1, 56.9500, 24.1100), alert(2, 56.9500, 24.1110), alert(3, 56.9500, 24.1105)]
+    c = sections(pts, {1: {"a"}, 2: {"b"}, 3: {"c"}}, None)  # no OSM file: join dots within 80 m
+    assert len(c) == 1 and c[0]["source"] == "cluster"
+    assert [p[1] for p in c[0]["coords"]] in ([24.1100, 24.1105, 24.1110], [24.1110, 24.1105, 24.1100])
+
+
+def test_sections_endpoint(make_client, tmp_path, monkeypatch, mock_dir):
+    from app.main import settings
+    f = tmp_path / "walks.geojson"
+    crossing = [[24.10495, 56.94980], [24.10545, 56.94980]]   # through the mock crossing zone
+    f.write_text(json.dumps({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"id": "x1", "name": "Demo iela", "kind": "sidewalk"},
+         "geometry": {"type": "LineString", "coordinates": crossing}}]}), encoding="utf-8")
+    monkeypatch.setattr(settings, "sidewalks_file", f)
+    client, engine, clock, _ = make_client()
+    from app.timeutil import parse_ts
+    clock.set(parse_ts("2026-11-25T07:00:00Z"))
+    client.post("/snowfalls", json={"start": "2026-11-24T22:00:00Z", "end": "2026-11-25T01:00:00Z"})
+    r = client.post("/signals", json={"camera_id": "mock_cam_1", "zone_id": "mock_cam_1:crossing", "lat": 56.9498,
+                                      "lon": 24.1052, "timestamp": "2026-11-25T07:00:00Z", "hazard_class": "blocked",
+                                      "blocked_share": 0.8, "confidence": 0.86})
+    al = r.json()["alert_id"]
+    body = client.get("/sections").json()
+    assert body["source"] == "osm" and body["sections"][0]["alert_ids"] == [al]
+    assert body["sections"][0]["name"] == "Demo iela"
+    assert client.get("/sections", params={"role": "contractor"}).status_code == 403

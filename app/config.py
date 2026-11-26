@@ -52,6 +52,8 @@ class Settings:
         self.cameras_file = _path("CAMERAS_FILE", "config/cameras.json")
         self.cameras_fallback = _path("CAMERAS_FALLBACK", "mock/cameras_mock.json")
         self.contractors_file = _path("CONTRACTORS_FILE", "config/contractors.json")
+        # street / sidewalk blocks from OpenStreetMap (python -m app.osm_sidewalks); missing -> cluster lines
+        self.sidewalks_file = _path("SIDEWALKS_FILE", "config/riga_sidewalks.geojson")
 
         self.analyze_url = env("ANALYZE_URL", "")  # empty -> built-in stub (always accept)
         self.analyze_timeout = env_float("ANALYZE_TIMEOUT", 10.0)

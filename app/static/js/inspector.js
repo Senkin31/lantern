@@ -55,7 +55,7 @@
       S.alerts = res.alerts;
       S.settings = res.settings;
       L$.syncFromSettings(S.settings);
-      const jobs = [];
+      const jobs = [api("/sections?role=inspector").then((r) => { S.sections = r.sections; }).catch(() => {})];
       if (S.tab === "today") jobs.push(api("/inspection/today").then((r) => { S.data.today = r.alerts; }));
       if (S.tab === "reports") {
         jobs.push(api("/reports?role=inspector&relevant=review").then((r) => { S.data.reviewReports = r; }));
@@ -170,7 +170,8 @@
         + `<div><i style="background:${c.watch}"></i>${esc(t("st_watch"))}</div>`
         + `<div><i style="background:${c.reopened}"></i>${esc(t("st_reopened"))}</div>`
         + `<div><i style="background:${c.verified}"></i>${esc(t("st_verified"))}</div>`
-        + `<div><i style="background:${c.cleared}"></i>${esc(t("st_cleared_in_time"))}</div>`;
+        + `<div><i style="background:${c.cleared}"></i>${esc(t("st_cleared_in_time"))}</div>`
+        + `<div><i style="background:${c.high};height:5px;border-radius:3px;margin-top:4px"></i>${esc(t("sectionLegend"))}</div>`;
       return d;
     };
     S.legend.addTo(S.map);
@@ -194,8 +195,27 @@
     };
   }
 
+  // Street sections: a block of sidewalk/street with a camera alert or 2+ residents, in its worst alert's colour
+  function updateSections() {
+    if (!S.sectionLayer) S.sectionLayer = L.layerGroup().addTo(S.map);
+    const key = JSON.stringify((S.sections || []).map((s) => [s.id, s.status, s.urgency_level, s.alert_ids]));
+    if (key === S.sectionKey) return;
+    S.sectionKey = key;
+    S.sectionLayer.clearLayers();
+    (S.sections || []).forEach((s) => {
+      const col = L$.alertColor({ status: s.status, urgency_level: s.urgency_level });
+      const line = L.polyline(s.coords, { color: col, weight: 9, opacity: 0.7, lineCap: "round",
+        dashArray: s.status === "watch" ? "8 8" : null }).addTo(S.sectionLayer);
+      const who = [s.camera ? "📷" : "", s.residents ? `${s.residents} 👤` : ""].filter(Boolean).join(" · ");
+      line.bindTooltip(`${esc(s.name || t("sectionNoName"))} · ${s.length_m} m<br>${esc(t("lv_" + s.urgency_level))} · ${who} · #${s.alert_ids.join(", #")}`);
+      line.on("click", () => select(s.alert_ids[0]));
+      line.bringToBack();
+    });
+  }
+
   function updateMap() {
     if (!S.map) return;
+    updateSections();
     const seen = new Set();
     const bounds = [];
     S.alerts.forEach((a) => {

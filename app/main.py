@@ -19,6 +19,7 @@ from .config import settings
 from .db import Database
 from .engine import PASSABLE, PLACE_TYPES, REPORT_HAZARDS, Engine, RuleError
 from .registry import Registry
+from .segments import Sidewalks
 from .spam import SpamGuard, photo_hashes
 from .timeutil import clock, fmt_ts, parse_ts
 from .views import Views
@@ -36,6 +37,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
     registry = Registry(settings.cameras_file, settings.cameras_fallback, settings.contractors_file)
     engine = Engine(db, settings, clock, registry)
     views = Views(engine)
+    views.sidewalks = Sidewalks.load(settings.sidewalks_file)
     guard = SpamGuard(db, settings, clock)
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     _restore_demo_clock(db)
@@ -366,6 +368,15 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         return HTMLResponse(evidence_mod.render(ev, settings.tile_url, settings.tile_attribution,
                                                 settings.images_credit, settings.source_url, lang),
                             headers={"Cache-Control": "no-store"})
+
+    @app.get("/sections", tags=["inspector"])
+    def street_sections(role: str = "inspector"):
+        """Street sections for the inspector map: blocks with a camera alert or 2+ residents, coloured
+        by their worst alert (app/segments.py). Single complaints stay dots."""
+        if role != "inspector":
+            raise HTTPException(403, "inspector only")
+        engine.tick()
+        return {"source": "osm" if views.sidewalks else "cluster", "sections": views.sections()}
 
     @app.get("/inspection/today", tags=["inspector"])
     def inspection_today(limit: int = Query(10, ge=1, le=100)):

@@ -79,6 +79,7 @@
       kpi2: "Reached the contractor in ≤ {n} min", kpi2Sub: "{a} of {b} jobs",
       kpi3: "Signals with an exact location", kpi3Sub: "{a} of {b} (cameras always, reports with a map point)",
       actFalse: "False alarm (no snow)", falseAlarm: "False alarm",
+      sectionLegend: "Street section (camera or 2+ residents)", sectionNoName: "Unnamed street",
       exportGeo: "Export GeoJSON", exportCsv: "Export CSV", noStats: "No alerts have been sent to contractors yet.",
       // contractor
       myJobs: "My jobs", listView: "List", mapView: "Map", toDo: "To do", waiting: "Waiting for check", doneToday: "Verified",
@@ -159,6 +160,7 @@
       kpi2: "Darbuzņēmējs saņēma ≤ {n} min", kpi2Sub: "{a} no {b} darbiem",
       kpi3: "Signāli ar precīzu vietu", kpi3Sub: "{a} no {b} (kameras vienmēr, ziņojumi ar punktu kartē)",
       actFalse: "Viltus trauksme (nav sniega)", falseAlarm: "Viltus trauksme",
+      sectionLegend: "Ielas posms (kamera vai 2+ iedzīvotāji)", sectionNoName: "Iela bez nosaukuma",
       exportGeo: "Eksportēt GeoJSON", exportCsv: "Eksportēt CSV", noStats: "Darbuzņēmējiem vēl nekas nav nosūtīts.",
       myJobs: "Mani darbi", listView: "Saraksts", mapView: "Karte", toDo: "Jādara", waiting: "Gaida pārbaudi", doneToday: "Pārbaudīti",
       noJobs: "Jūsu rajonā šobrīd darbu nav.", completed: "Pabeigtie",

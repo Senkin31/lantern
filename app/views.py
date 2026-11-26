@@ -9,6 +9,7 @@ from typing import Optional
 from .engine import CLOSED, DISPATCHED, NOT_CLOSED_SQL, SNOW, Engine
 from .registry import haversine_m
 from .rules import fmt_riga
+from .segments import sections as street_sections
 from .timeutil import fmt_ts, parse_ts
 
 
@@ -29,6 +30,7 @@ def _hours(sec: Optional[float]) -> Optional[float]:
 class Views:
     def __init__(self, engine: Engine):
         self.e = engine
+        self.sidewalks = None  # app.segments.Sidewalks, set by build_app
         self.db = engine.db
 
     # ------------------------------------------------------------------ alerts
@@ -190,6 +192,14 @@ class Views:
                     haversine_m(a["lat"], a["lon"], o["lat"], o["lon"]) <= self.e.cfg.merge_radius_m:
                 return True
         return False
+
+    def sections(self) -> list:
+        """Active alerts snapped to street blocks; see app/segments.py for when a block is painted."""
+        alerts = self.db.q(f"SELECT * FROM alerts WHERE {NOT_CLOSED_SQL}")
+        devices: dict = {}
+        for r in self.db.q("SELECT alert_id, device_id FROM reports WHERE counted = 1 AND alert_id IS NOT NULL"):
+            devices.setdefault(r["alert_id"], set()).add(r["device_id"])
+        return street_sections(alerts, devices, self.sidewalks)
 
     def inspection_today(self, limit: int = 10) -> list:
         """Check list for the inspector's day (08:30-17:00), in the brief's order:

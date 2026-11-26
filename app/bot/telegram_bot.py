@@ -15,6 +15,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 import sys
 import threading
@@ -32,6 +33,21 @@ log = logging.getLogger("lantern.bot")
 
 MAX_PHOTO = 10 * 1024 * 1024
 COMMENT_MAX = 200
+# Telegram on a computer cannot send a location pin: accept "56.9496, 24.1052" or a map link
+# (Google Maps "@56.94,24.10" / "?q=56.94,24.10", OpenStreetMap "#map=17/56.94/24.10" or mlat/mlon)
+_COORDS = [re.compile(r"mlat=(-?\d{1,2}\.\d+)&mlon=(-?\d{1,3}\.\d+)"),
+           re.compile(r"(?<![\d.])(-?\d{1,2}\.\d{3,})\s*[,;/ ]\s*(-?\d{1,3}\.\d{3,})(?![\d.])")]
+
+
+def coords_from_text(text: str) -> Optional[tuple]:
+    """(lat, lon) from typed coordinates or a map link, else None."""
+    for rx in _COORDS:
+        m = rx.search(text or "")
+        if m:
+            lat, lon = float(m.group(1)), float(m.group(2))
+            if -90 <= lat <= 90 and -180 <= lon <= 180:
+                return lat, lon
+    return None
 TRACK_DAYS = 7
 STATUS_EVERY = 30.0
 NOTIFY_STATUSES = ("open", "done_reported", "reopened", "verified", "cleared_in_time")
@@ -250,6 +266,9 @@ class LanternBot:
         draft = self.drafts.get(chat_id)
         step = (draft or {}).get("step")
         L = self.lang(chat_id)
+        typed = coords_from_text(text) if step in ("location", "confirm") and not msg.get("location") else None
+        if typed:
+            msg = {**msg, "location": {"latitude": typed[0], "longitude": typed[1]}}
         if msg.get("location") or msg.get("venue"):
             loc = msg.get("location") or msg["venue"]["location"]
             if step in ("location", "passable", "hazard", "place", "comment", "confirm") and draft.get("photo"):

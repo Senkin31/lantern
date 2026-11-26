@@ -162,3 +162,32 @@ def test_server_down_keeps_draft(make_client, tmp_path):
     assert "Paldies, signāls saņemts" in fake.texts(1)[-1]
     # a broken update does not raise
     bot.handle_update({"update_id": 99, "message": {"chat": {}}})
+
+
+def test_typed_coordinates_and_map_links():
+    from app.bot.telegram_bot import coords_from_text
+    assert coords_from_text("56.9496, 24.1052") == (56.9496, 24.1052)
+    assert coords_from_text("https://www.google.com/maps/@56.94961,24.10522,17z") == (56.94961, 24.10522)
+    assert coords_from_text("https://www.openstreetmap.org/#map=18/56.9496/24.1052") == (56.9496, 24.1052)
+    assert coords_from_text("https://www.openstreetmap.org/?mlat=56.9496&mlon=24.1052") == (56.9496, 24.1052)
+    assert coords_from_text("Kaļķu iela 5") is None and coords_from_text("call 1201") is None
+
+
+def test_report_with_typed_coordinates(make_client, tmp_path):
+    client, engine, clock, verdicts = make_client()
+    bot, fake = make_bot(client, tmp_path)
+    chat = 556
+    bot.handle_update(fake.msg(chat, text="/start"))
+    bot.handle_update(fake.cb(chat, "lang:en"))
+    bot.handle_update(fake.msg(chat, photo=[{"file_id": "p", "width": 10, "height": 10}]))
+    bot.handle_update(fake.msg(chat, text="Kaļķu iela"))               # not a place yet
+    assert "paste coordinates" in fake.texts(chat)[-1]
+    bot.handle_update(fake.msg(chat, text="56.9496, 24.1052"))         # Telegram on a computer
+    assert "Location received" in " ".join(fake.texts(chat)[-2:])
+    bot.handle_update(fake.cb(chat, "pass:no"))
+    bot.handle_update(fake.cb(chat, "haz:skip"))
+    bot.handle_update(fake.cb(chat, "place:skip"))
+    bot.handle_update(fake.cb(chat, "com:skip"))
+    bot.handle_update(fake.cb(chat, "ok:send"))
+    row = engine.db.q("SELECT lat, lon FROM reports")[0]
+    assert (row["lat"], row["lon"]) == (56.9496, 24.1052)

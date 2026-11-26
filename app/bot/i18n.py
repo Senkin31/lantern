@@ -29,9 +29,12 @@ T = {
         "ru": "📷 1/3 Пришлите одно фото снега, льда или перекрытого тротуара.",
     },
     "ask_location": {
-        "lv": "📍 2/3 Tagad atrašanās vieta. Nospied pogu zemāk — vai nosūti citu punktu: 📎 → Atrašanās vieta.",
-        "en": "📍 2/3 Now the location. Tap the button below — or send another point via 📎 → Location.",
-        "ru": "📍 2/3 Теперь место. Нажмите кнопку ниже — или отправьте другую точку: 📎 → Геопозиция.",
+        "lv": "📍 2/3 Tagad atrašanās vieta. Nospied pogu zemāk — vai nosūti citu punktu: 📎 → Atrašanās vieta. "
+              "No datora: ielīmē koordinātas (56.9496, 24.1052) vai Google Maps / OpenStreetMap saiti.",
+        "en": "📍 2/3 Now the location. Tap the button below — or send another point via 📎 → Location. "
+              "On a computer: paste coordinates (56.9496, 24.1052) or a Google Maps / OpenStreetMap link.",
+        "ru": "📍 2/3 Теперь место. Нажмите кнопку ниже — или отправьте другую точку: 📎 → Геопозиция. "
+              "С компьютера: вставьте координаты (56.9496, 24.1052) или ссылку Google Maps / OpenStreetMap.",
     },
     "btn_location": {"lv": "📍 Sūtīt manu atrašanās vietu", "en": "📍 Send my location",
                      "ru": "📍 Отправить моё местоположение"},
@@ -147,8 +150,9 @@ T = {
                   "ru": "Отменено. Чтобы начать заново, пришлите фото."},
     "need_photo": {"lv": "Vispirms nosūti foto 📷", "en": "Please send a photo first 📷",
                    "ru": "Сначала пришлите фото 📷"},
-    "need_location": {"lv": "Nosūti atrašanās vietu ar pogu zemāk 📍", "en": "Send the location with the button below 📍",
-                      "ru": "Отправьте место кнопкой ниже 📍"},
+    "need_location": {"lv": "Nosūti atrašanās vietu ar pogu zemāk 📍 vai ielīmē koordinātas / kartes saiti",
+                      "en": "Send the location with the button below 📍 or paste coordinates / a map link",
+                      "ru": "Отправьте место кнопкой ниже 📍 или вставьте координаты / ссылку на карту"},
     "use_buttons": {"lv": "Izvēlies kādu no pogām ziņā augstāk 👆", "en": "Please choose one of the buttons above 👆",
                     "ru": "Выберите одну из кнопок выше 👆"},
     "help": {

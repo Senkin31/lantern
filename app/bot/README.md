@@ -26,6 +26,8 @@ The bot uses long polling, so neither the bot nor the app needs a public address
 
 Commands: `/start`, `/status` (my tickets), `/lang` (LV / EN / RU), `/cancel`, `/help`. A user can also just send a photo to start a report.
 
+**Location from a computer.** Telegram Desktop and Telegram Web cannot send a location pin, so at the location step the bot also takes typed coordinates (`56.9496, 24.1052`) or a map link (Google Maps `@lat,lon` / `?q=lat,lon`, OpenStreetMap `#map=z/lat/lon` or `mlat=…&mlon=…`).
+
 ## Privacy
 
 - The server receives only `device_id = sha256(salt + Telegram user id)[:16]`, which still gives one vote per person per alert. It never receives the Telegram id, name or username.

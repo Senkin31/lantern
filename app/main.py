@@ -136,7 +136,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         photo: UploadFile = File(...),
         lat: float = Form(..., ge=-90, le=90),
         lon: float = Form(..., ge=-180, le=180),
-        passable: str = Form(...),
+        passable: Optional[str] = Form(None),  # no longer asked: the model's verdict fills it
         hazard: Optional[str] = Form(None),
         place_type: Optional[str] = Form(None),
         comment: Optional[str] = Form(None),
@@ -145,7 +145,8 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         channel: Optional[str] = Form(None),
         registration_no: Optional[str] = Form(None),
     ):
-        if passable not in PASSABLE:
+        passable = passable or None
+        if passable is not None and passable not in PASSABLE:
             raise HTTPException(422, f"passable must be one of {PASSABLE}")
         hazard = hazard or None
         place_type = place_type or None
@@ -215,9 +216,18 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         if name is None:
             name = f"{fmt_ts(clock.now()).replace(':', '').replace('-', '')}_{secrets.token_hex(4)}{IMAGE_TYPES[ctype]}"
             (settings.upload_dir / name).write_bytes(data)
+        # residents are no longer asked "can people get through?" or "what is there?": the photo answers.
+        # The model's verdict stands in (marked passable_by=ai, so the evidence package does not say
+        # a resident claimed it); its hint becomes the hazard type.
+        passable_by = "resident" if passable else "ai"
+        if passable is None:
+            passable = {"accept": "no", "reject": "yes"}.get(analysis.get("relevant"), "partly")
+        if hazard is None and analysis.get("relevant") != "reject":
+            hazard = {"snow": "snow", "blocked": "snow", "ice": "ice", "icicles": "icicles"}.get(analysis.get("hint"))
         chan = channel if channel in ("web", "telegram", "whatsapp", "replay") else ("replay" if device_id else "web")
         rep = engine.ingest_report(
-            {"lat": lat, "lon": lon, "passable": passable, "hazard": hazard, "place_type": place_type,
+            {"lat": lat, "lon": lon, "passable": passable, "passable_by": passable_by, "hazard": hazard,
+             "place_type": place_type,
              "comment": comment, "device_id": device, "timestamp": timestamp}, analysis, name, chan,
             photo_sha256=sha, photo_dhash=dhash, ip_hash=ip_h, reuse_of=reuse_of, registration_no=registration_no)
         if rep["relevant"] == "reject" or rep["duplicate"] or rep["reuse_of"]:

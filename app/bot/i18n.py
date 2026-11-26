@@ -11,81 +11,42 @@ T = {
     },
     "welcome": {
         "lv": "🏮 Lantern — ziņo par neiztīrītām ietvēm Rīgā.\n\n"
-              "Nosūti foto, atrašanās vietu un pasaki, vai var paiet garām. Mākslīgais intelekts pārbauda foto, "
+              "Nosūti foto un atrašanās vietu, tas ir viss. Mākslīgais intelekts pārbauda foto, "
               "un tikai tad signāls nonāk pie pilsētas inspektora.\n\n"
               "Tas papildina tālruni 1201, nevis aizstāj to. Mēs neprasām vārdu, tālruni vai e-pastu.",
         "en": "🏮 Lantern — report uncleared sidewalks in Riga.\n\n"
-              "Send a photo, the location, and tell us whether people can get through. AI checks the photo, "
+              "Send a photo and the location, that's all. AI checks the photo, "
               "and only then the signal reaches the city inspector.\n\n"
               "This complements the 1201 phone line, it does not replace it. We never ask for your name, phone or email.",
         "ru": "🏮 Lantern — сообщите о неубранном тротуаре в Риге.\n\n"
-              "Пришлите фото, место и укажите, можно ли пройти. Нейросеть проверит фото, "
+              "Пришлите фото и место, больше ничего не нужно. Нейросеть проверит фото, "
               "и только после этого сигнал попадёт к инспектору города.\n\n"
               "Бот дополняет телефон 1201, а не заменяет его. Имя, телефон и e-mail мы не спрашиваем.",
     },
     "ask_photo": {
-        "lv": "📷 1/3 Nosūti vienu foto ar sniegu, ledu vai aizšķērsotu ietvi.",
-        "en": "📷 1/3 Send one photo of the snow, ice or blocked sidewalk.",
-        "ru": "📷 1/3 Пришлите одно фото снега, льда или перекрытого тротуара.",
+        "lv": "📷 1/2 Nosūti vienu foto ar sniegu, ledu vai aizšķērsotu ietvi.",
+        "en": "📷 1/2 Send one photo of the snow, ice or blocked sidewalk.",
+        "ru": "📷 1/2 Пришлите одно фото снега, льда или перекрытого тротуара.",
     },
     "ask_location": {
-        "lv": "📍 2/3 Tagad atrašanās vieta. Nospied pogu zemāk — vai nosūti citu punktu: 📎 → Atrašanās vieta. "
+        "lv": "📍 2/2 Tagad atrašanās vieta. Nospied pogu zemāk — vai nosūti citu punktu: 📎 → Atrašanās vieta. "
               "No datora: ielīmē koordinātas (56.9496, 24.1052) vai Google Maps / OpenStreetMap saiti.",
-        "en": "📍 2/3 Now the location. Tap the button below — or send another point via 📎 → Location. "
+        "en": "📍 2/2 Now the location. Tap the button below — or send another point via 📎 → Location. "
               "On a computer: paste coordinates (56.9496, 24.1052) or a Google Maps / OpenStreetMap link.",
-        "ru": "📍 2/3 Теперь место. Нажмите кнопку ниже — или отправьте другую точку: 📎 → Геопозиция. "
+        "ru": "📍 2/2 Теперь место. Нажмите кнопку ниже — или отправьте другую точку: 📎 → Геопозиция. "
               "С компьютера: вставьте координаты (56.9496, 24.1052) или ссылку Google Maps / OpenStreetMap.",
     },
     "btn_location": {"lv": "📍 Sūtīt manu atrašanās vietu", "en": "📍 Send my location",
                      "ru": "📍 Отправить моё местоположение"},
     "location_ok": {"lv": "Vieta saņemta ✅", "en": "Location received ✅", "ru": "Место получено ✅"},
-    "ask_passable": {
-        "lv": "🚶 3/3 Vai var paiet garām?",
-        "en": "🚶 3/3 Can people get through?",
-        "ru": "🚶 3/3 Можно ли пройти?",
-    },
-    "pass_no": {"lv": "⛔ Nevar", "en": "⛔ No", "ru": "⛔ Нельзя"},
-    "pass_partly": {"lv": "⚠️ Daļēji", "en": "⚠️ Partly", "ru": "⚠️ Частично"},
-    "pass_yes": {"lv": "✅ Var", "en": "✅ Yes", "ru": "✅ Можно"},
-    "ask_hazard": {
-        "lv": "Kas tur ir? (nav obligāti)",
-        "en": "What is there? (optional)",
-        "ru": "Что там? (необязательно)",
-    },
-    "haz_snow": {"lv": "❄️ Sniegs", "en": "❄️ Snow", "ru": "❄️ Снег"},
-    "haz_ice": {"lv": "🧊 Ledus", "en": "🧊 Ice", "ru": "🧊 Лёд"},
-    "haz_icicles": {"lv": "🔻 Lāstekas", "en": "🔻 Icicles", "ru": "🔻 Сосульки"},
-    "haz_other": {"lv": "Cits", "en": "Other", "ru": "Другое"},
-    "ask_place": {
-        "lv": "Kāda vieta? (nav obligāti)",
-        "en": "What kind of place? (optional)",
-        "ru": "Что за место? (необязательно)",
-    },
-    "place_sidewalk": {"lv": "Ietve", "en": "Sidewalk", "ru": "Тротуар"},
-    "place_crossing": {"lv": "Gājēju pāreja", "en": "Crossing", "ru": "Переход"},
-    "place_ramp": {"lv": "Nobrauktuve", "en": "Curb ramp", "ru": "Съезд"},
-    "place_stop": {"lv": "Pietura", "en": "Bus stop", "ru": "Остановка"},
-    "place_other": {"lv": "Cits", "en": "Other", "ru": "Другое"},
-    "skip": {"lv": "Izlaist ➡️", "en": "Skip ➡️", "ru": "Пропустить ➡️"},
-    "ask_comment": {
-        "lv": "💬 Komentārs (līdz 200 zīmēm) — uzraksti vai izlaid.",
-        "en": "💬 Comment (up to 200 characters) — type it or skip.",
-        "ru": "💬 Комментарий (до 200 символов) — напишите или пропустите.",
-    },
-    "comment_too_long": {
-        "lv": "Komentārs ir garāks par 200 zīmēm ({n}). Lūdzu, saīsini.",
-        "en": "The comment is longer than 200 characters ({n}). Please shorten it.",
-        "ru": "Комментарий длиннее 200 символов ({n}). Пожалуйста, сократите.",
-    },
     "summary": {
-        "lv": "Pārbaudi un apstiprini:\n\n📷 foto: ir\n📍 vieta: {lat:.5f}, {lon:.5f}\n🚶 paiet: {passable}\n"
-              "❓ kas: {hazard}\n🏷 vieta: {place}\n💬 {comment}",
-        "en": "Check and confirm:\n\n📷 photo: attached\n📍 location: {lat:.5f}, {lon:.5f}\n🚶 passable: {passable}\n"
-              "❓ what: {hazard}\n🏷 place: {place}\n💬 {comment}",
-        "ru": "Проверьте и подтвердите:\n\n📷 фото: есть\n📍 место: {lat:.5f}, {lon:.5f}\n🚶 пройти: {passable}\n"
-              "❓ что: {hazard}\n🏷 место: {place}\n💬 {comment}",
+        "lv": "Pārbaudi un apstiprini:\n\n📷 foto: ir\n📍 vieta: {lat:.5f}, {lon:.5f}\n\n"
+              "Kas tur ir un cik slikti, novērtēs MI pēc foto.",
+        "en": "Check and confirm:\n\n📷 photo: attached\n📍 location: {lat:.5f}, {lon:.5f}\n\n"
+              "What is there and how bad: the AI reads it from the photo.",
+        "ru": "Проверьте и подтвердите:\n\n📷 фото: есть\n📍 место: {lat:.5f}, {lon:.5f}\n\n"
+              "Что там и насколько плохо, ИИ определит по фото.",
     },
-    "none": {"lv": "—", "en": "—", "ru": "—"},
     "btn_send": {"lv": "✅ Sūtīt", "en": "✅ Send", "ru": "✅ Отправить"},
     "btn_cancel": {"lv": "✖️ Atcelt", "en": "✖️ Cancel", "ru": "✖️ Отмена"},
     "sending": {"lv": "Sūtu un pārbaudu foto… ⏳", "en": "Sending and checking the photo… ⏳",

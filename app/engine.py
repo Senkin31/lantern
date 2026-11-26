@@ -308,13 +308,13 @@ class Engine:
             report_id = self.db.run(
                 "INSERT INTO reports(alert_id, ticket, channel, photo_path, lat, lon, passable, hazard, place_type, "
                 "comment, device_id, timestamp, relevant, ai_score, ai_hint, ai_note, counted, duplicate, received_at, "
-                "photo_sha256, photo_dhash, ip_hash, reuse_of, registration_no) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "photo_sha256, photo_dhash, ip_hash, reuse_of, registration_no, passable_by) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (alert_id, ticket, channel, photo_path, r["lat"], r["lon"], r["passable"], r.get("hazard"),
                  r.get("place_type"), r.get("comment") or "", r["device_id"], fmt_ts(ts), relevant,
                  analysis.get("score"), analysis.get("hint"), analysis.get("note"),
                  1 if counted else 0, 1 if duplicate else 0, now, photo_sha256, photo_dhash, ip_hash, reuse_of,
-                 registration_no))
+                 registration_no, r.get("passable_by") or "resident"))
             if alert_id is not None:
                 self._bump_evidence(alert_id, ts)
                 self.recompute(alert_id)

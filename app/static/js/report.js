@@ -1,4 +1,4 @@
-/* Lantern resident form: photo + place + "can you get through?" -> POST /reports.
+/* Lantern resident form: photo + place -> POST /reports (the model reads what is there and how bad).
    No login. The server sets a random device cookie; this page never sends a device id. */
 (function () {
   "use strict";
@@ -7,7 +7,7 @@
     lv: {
       page_title: "Lantern — ziņot par ietvi",
       title: "Ziņo par bīstamu ietvi",
-      lead: "Foto, vieta un viens jautājums — 20 sekundes.",
+      lead: "Foto un vieta — 15 sekundes. Pārējo MI nolasīs no foto.",
       photo_h: "Foto", photo_btn: "Uzņemt vai izvēlēties foto", photo_change: "Mainīt foto",
       loc_h: "Vieta", loc_btn: "Mana atrašanās vieta",
       loc_hint: "Pieskaries kartei vai pavelc atzīmi uz precīzo vietu.",
@@ -54,7 +54,7 @@
     en: {
       page_title: "Lantern — report a sidewalk",
       title: "Report a dangerous sidewalk",
-      lead: "A photo, the place and one question — 20 seconds.",
+      lead: "A photo and the place — 15 seconds. The AI reads the rest from the photo.",
       photo_h: "Photo", photo_btn: "Take or choose a photo", photo_change: "Change photo",
       loc_h: "Place", loc_btn: "Use my location",
       loc_hint: "Tap the map or drag the pin to the exact spot.",
@@ -101,7 +101,7 @@
     ru: {
       page_title: "Lantern — сообщить о тротуаре",
       title: "Сообщите об опасном тротуаре",
-      lead: "Фото, место и один вопрос — 20 секунд.",
+      lead: "Фото и место — 15 секунд. Остальное ИИ поймёт по фото.",
       photo_h: "Фото", photo_btn: "Сделать или выбрать фото", photo_change: "Заменить фото",
       loc_h: "Место", loc_btn: "Моё местоположение",
       loc_hint: "Нажмите на карту или перетащите метку на точное место.",
@@ -157,7 +157,7 @@
   };
 
   let lang = store.get("lantern_lang", null) || pickLang();
-  const state = { photo: null, lat: null, lon: null, passable: null, hazard: null, place_type: null, locMsg: "loc_hint", locArg: {} };
+  const state = { photo: null, lat: null, lon: null, locMsg: "loc_hint", locArg: {} };
   let map, marker, lastTicket = null, pollTimer = null;
 
   function pickLang() {
@@ -258,27 +258,10 @@
     locate(true);
   }
 
-  // ------------------------------------------------------------------ choices
-  document.querySelectorAll(".choice").forEach((group) => {
-    const field = group.dataset.field;
-    group.addEventListener("click", (e) => {
-      const btn = e.target.closest("button[data-value]");
-      if (!btn) return;
-      const optional = field !== "passable";
-      const value = optional && state[field] === btn.dataset.value ? null : btn.dataset.value; // optional chips toggle off
-      state[field] = value;
-      group.querySelectorAll("button").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.value === value)));
-      if (field === "passable") $("sec-pass").classList.add("ok");
-      updateMissing();
-    });
-  });
-  $("comment").addEventListener("input", (e) => { $("count").textContent = e.target.value.length; });
-
   function missing() {
     const m = [];
     if (!state.photo) m.push(tr("need_photo"));
     if (state.lat === null) m.push(tr("need_loc"));
-    if (!state.passable) m.push(tr("need_pass"));
     return m;
   }
   function updateMissing() {
@@ -294,7 +277,7 @@
     const m = missing();
     if (m.length) {
       updateMissing();
-      const first = !state.photo ? "sec-photo" : state.lat === null ? "sec-loc" : "sec-pass";
+      const first = !state.photo ? "sec-photo" : "sec-loc";
       $(first).scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
@@ -302,13 +285,8 @@
     fd.append("photo", state.photo, "photo.jpg");
     fd.append("lat", String(state.lat));
     fd.append("lon", String(state.lon));
-    fd.append("passable", state.passable);
-    if (state.hazard) fd.append("hazard", state.hazard);
-    if (state.place_type) fd.append("place_type", state.place_type);
     const regno = ($("regno") && $("regno").value || "").trim();
     if (regno) fd.append("registration_no", regno);
-    const comment = $("comment").value.trim().slice(0, 200);
-    if (comment) fd.append("comment", comment);
     fd.append("channel", "web");
     const btn = $("submit");
     btn.disabled = true;

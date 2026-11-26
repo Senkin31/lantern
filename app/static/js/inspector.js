@@ -432,7 +432,7 @@
       ${r.photo_url ? `<img src="${esc(r.photo_url)}" data-zoom="${esc(r.photo_url)}" alt="" loading="lazy">` : "<div></div>"}
       <div>
         <div><b>#${r.id}</b> · ${esc(L$.fmtTime(r.timestamp))} · ${esc(r.channel || "")}</div>
-        <div class="small">${esc(t("ps_" + r.passable))} · ${esc(L$.hazard(r.hazard))} · ${esc(L$.place(r.place_type))}</div>
+        <div class="small">${esc(t("ps_" + r.passable))}${r.passable_by === "ai" ? ` (${esc(t("byAi"))})` : ""} · ${esc(L$.hazard(r.hazard))} · ${esc(L$.place(r.place_type))}</div>
         ${r.comment ? `<div class="small">“${esc(r.comment)}”</div>` : ""}
         ${r.registration_no ? `<div class="small">${esc(t("regNo"))}: <b>${esc(r.registration_no)}</b></div>` : ""}
         <div class="small muted">${esc(t("aiSays"))}: ${esc(ai)}${r.ai_note ? ` — ${esc(r.ai_note)}` : ""}</div>
@@ -540,7 +540,7 @@
       : `<p class="muted small">${esc(t("noFrames"))}</p>`;
     const reps = (d.reports || []).length ? `<div class="photos">${d.reports.map((r) => `<div class="photo-item">
         ${r.photo_url ? `<img src="${esc(r.photo_url)}" data-zoom="${esc(r.photo_url)}" alt="" loading="lazy">` : ""}
-        <div><b>${esc(t("ps_" + r.passable))}</b> · ${esc(L$.hazard(r.hazard))}</div>
+        <div><b>${esc(t("ps_" + r.passable))}${r.passable_by === "ai" ? ` (${esc(t("byAi"))})` : ""}</b> · ${esc(L$.hazard(r.hazard))}</div>
         <div>${esc(L$.fmtTime(r.timestamp))} · ${esc(r.channel || "")} · ${esc(r.device || "")}</div>
         ${r.comment ? `<div>“${esc(r.comment)}”</div>` : ""}
         ${r.registration_no ? `<div>${esc(t("regNo"))}: <b>${esc(r.registration_no)}</b></div>` : ""}

@@ -23,7 +23,7 @@
 
   <main id="form-view">
     <h1 data-i18n="title">Ziņo par bīstamu ietvi</h1>
-    <p class="lead" data-i18n="lead">Foto, vieta un viens jautājums — 20 sekundes.</p>
+    <p class="lead" data-i18n="lead">Foto un vieta — 15 sekundes.</p>
 
     <form id="report-form" novalidate>
       <!-- 1. Photo -->
@@ -53,37 +53,10 @@
         </div>
       </section>
 
-      <!-- 3. Passable -->
-      <section class="card" id="sec-pass">
-        <h2><span class="num">3</span><span data-i18n="pass_h">Vai var paiet garām?</span></h2>
-        <div class="choice big" role="radiogroup" data-field="passable">
-          <button type="button" role="radio" aria-checked="false" data-value="no" class="pass-no"><span class="dot"></span><span data-i18n="pass_no">Nevar</span></button>
-          <button type="button" role="radio" aria-checked="false" data-value="partly" class="pass-partly"><span class="dot"></span><span data-i18n="pass_partly">Daļēji</span></button>
-          <button type="button" role="radio" aria-checked="false" data-value="yes" class="pass-yes"><span class="dot"></span><span data-i18n="pass_yes">Var</span></button>
-        </div>
-      </section>
-
-      <!-- Optional -->
+      <!-- Optional: only the council registration number. What is there and whether people can get
+           through is read from the photo by the model, so the resident is not asked. -->
       <details class="card optional" id="sec-more">
         <summary data-i18n="more_h">Vairāk informācijas (nav obligāti)</summary>
-        <h3 data-i18n="haz_h">Kas tur ir?</h3>
-        <div class="choice chips" role="radiogroup" data-field="hazard">
-          <button type="button" role="radio" aria-checked="false" data-value="snow" data-i18n="haz_snow">Sniegs</button>
-          <button type="button" role="radio" aria-checked="false" data-value="ice" data-i18n="haz_ice">Ledus</button>
-          <button type="button" role="radio" aria-checked="false" data-value="icicles" data-i18n="haz_icicles">Lāstekas</button>
-          <button type="button" role="radio" aria-checked="false" data-value="other" data-i18n="haz_other">Cits</button>
-        </div>
-        <h3 data-i18n="place_h">Kāda vieta?</h3>
-        <div class="choice chips" role="radiogroup" data-field="place_type">
-          <button type="button" role="radio" aria-checked="false" data-value="sidewalk" data-i18n="place_sidewalk">Ietve</button>
-          <button type="button" role="radio" aria-checked="false" data-value="crossing" data-i18n="place_crossing">Gājēju pāreja</button>
-          <button type="button" role="radio" aria-checked="false" data-value="ramp" data-i18n="place_ramp">Nobrauktuve</button>
-          <button type="button" role="radio" aria-checked="false" data-value="stop" data-i18n="place_stop">Pietura</button>
-          <button type="button" role="radio" aria-checked="false" data-value="other" data-i18n="place_other">Cits</button>
-        </div>
-        <h3><label for="comment" data-i18n="comment_h">Komentārs</label></h3>
-        <textarea id="comment" maxlength="200" rows="2" data-i18n-ph="comment_ph"></textarea>
-        <div class="counter"><span id="count">0</span>/200</div>
         <h3><label for="regno" data-i18n="regno_h">Domes reģistrācijas numurs</label></h3>
         <input id="regno" type="text" maxlength="40" autocomplete="off" data-i18n-ph="regno_ph">
       </details>

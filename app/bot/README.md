@@ -1,6 +1,6 @@
 # Lantern Telegram bot
 
-Residents send a sidewalk problem from Telegram: **photo → location → "can people get through?"** (plus optional hazard, place type and comment) → **confirm**. The bot is a thin client of the Lantern server:
+Residents send a sidewalk problem from Telegram: **photo → location → Send**. Nothing else is asked: the model reads from the photo what is there and how bad it is (the server fills `passable` and `hazard` from its verdict, marked as the AI's). The bot is a thin client of the Lantern server:
 
 ```
 Telegram ──(long polling)── bot ──POST /reports──▶ Lantern app :8000 ──POST /analyze──▶ model :8001

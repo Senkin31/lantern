@@ -32,7 +32,6 @@ from .i18n import LANG_NAMES, LANGS, t
 log = logging.getLogger("lantern.bot")
 
 MAX_PHOTO = 10 * 1024 * 1024
-COMMENT_MAX = 200
 # Telegram on a computer cannot send a location pin: accept "56.9496, 24.1052" or a map link
 # (Google Maps "@56.94,24.10" / "?q=56.94,24.10", OpenStreetMap "#map=17/56.94/24.10" or mlat/mlon)
 _COORDS = [re.compile(r"mlat=(-?\d{1,2}\.\d+)&mlon=(-?\d{1,3}\.\d+)"),
@@ -51,8 +50,6 @@ def coords_from_text(text: str) -> Optional[tuple]:
 TRACK_DAYS = 7
 STATUS_EVERY = 30.0
 NOTIFY_STATUSES = ("open", "done_reported", "reopened", "verified", "cleared_in_time")
-HAZARDS = ("snow", "ice", "icicles", "other")
-PLACES = ("sidewalk", "crossing", "ramp", "stop", "other")
 
 
 def _now() -> datetime:
@@ -177,42 +174,11 @@ class LanternBot:
             "keyboard": [[{"text": t("btn_location", L), "request_location": True}]],
             "resize_keyboard": True, "one_time_keyboard": True})
 
-    def ask_passable(self, chat_id) -> None:
-        L = self.lang(chat_id)
-        self.drafts[chat_id]["step"] = "passable"
-        self.send(chat_id, t("ask_passable", L), self.inline([[
-            (t("pass_no", L), "pass:no"), (t("pass_partly", L), "pass:partly"), (t("pass_yes", L), "pass:yes")]]))
-
-    def ask_hazard(self, chat_id) -> None:
-        L = self.lang(chat_id)
-        self.drafts[chat_id]["step"] = "hazard"
-        self.send(chat_id, t("ask_hazard", L), self.inline([
-            [(t("haz_snow", L), "haz:snow"), (t("haz_ice", L), "haz:ice")],
-            [(t("haz_icicles", L), "haz:icicles"), (t("haz_other", L), "haz:other")],
-            [(t("skip", L), "haz:skip")]]))
-
-    def ask_place(self, chat_id) -> None:
-        L = self.lang(chat_id)
-        self.drafts[chat_id]["step"] = "place"
-        self.send(chat_id, t("ask_place", L), self.inline([
-            [(t("place_sidewalk", L), "place:sidewalk"), (t("place_crossing", L), "place:crossing")],
-            [(t("place_ramp", L), "place:ramp"), (t("place_stop", L), "place:stop")],
-            [(t("place_other", L), "place:other"), (t("skip", L), "place:skip")]]))
-
-    def ask_comment(self, chat_id) -> None:
-        L = self.lang(chat_id)
-        self.drafts[chat_id]["step"] = "comment"
-        self.send(chat_id, t("ask_comment", L), self.inline([[(t("skip", L), "com:skip")]]))
-
     def ask_confirm(self, chat_id) -> None:
         L = self.lang(chat_id)
         d = self.drafts[chat_id]
         d["step"] = "confirm"
-        none = t("none", L)
-        text = t("summary", L, lat=d["lat"], lon=d["lon"], passable=t(f"pass_{d['passable']}", L),
-                 hazard=t(f"haz_{d['hazard']}", L) if d.get("hazard") else none,
-                 place=t(f"place_{d['place_type']}", L) if d.get("place_type") else none,
-                 comment=d.get("comment") or none)
+        text = t("summary", L, lat=d["lat"], lon=d["lon"])
         self.send(chat_id, text, self.inline([[(t("btn_send", L), "ok:send"), (t("btn_cancel", L), "ok:cancel")]]))
 
     # ------------------------------------------------------------------ updates
@@ -271,26 +237,16 @@ class LanternBot:
             msg = {**msg, "location": {"latitude": typed[0], "longitude": typed[1]}}
         if msg.get("location") or msg.get("venue"):
             loc = msg.get("location") or msg["venue"]["location"]
-            if step in ("location", "passable", "hazard", "place", "comment", "confirm") and draft.get("photo"):
+            if step in ("location", "confirm") and draft.get("photo"):
                 draft["lat"], draft["lon"] = float(loc["latitude"]), float(loc["longitude"])
                 self.send(chat_id, t("location_ok", L), {"remove_keyboard": True})
-                if step == "location":
-                    self.ask_passable(chat_id)
-                elif step == "confirm":
-                    self.ask_confirm(chat_id)
+                self.ask_confirm(chat_id)  # no more questions: the photo says what is there and how bad
             else:
                 self.send(chat_id, t("need_photo", L))
             return
-        if step == "comment" and text:
-            if len(text) > COMMENT_MAX:
-                self.send(chat_id, t("comment_too_long", L, n=len(text)))
-                return
-            draft["comment"] = text
-            self.ask_confirm(chat_id)
-            return
         if step == "location":
             self.send(chat_id, t("need_location", L))
-        elif step in ("passable", "hazard", "place", "confirm", "lang"):
+        elif step in ("confirm", "lang"):
             self.send(chat_id, t("use_buttons", L))
         else:
             if not draft:
@@ -346,28 +302,14 @@ class LanternBot:
             first = not chat.get("lang")
             chat["lang"] = value
             self.state.save()
-            reask = {"photo": self.ask_photo, "location": self.ask_location, "passable": self.ask_passable,
-                     "hazard": self.ask_hazard, "place": self.ask_place, "comment": self.ask_comment,
-                     "confirm": self.ask_confirm}
+            reask = {"photo": self.ask_photo, "location": self.ask_location, "confirm": self.ask_confirm}
             if first or step not in reask:
                 self.send(chat_id, t("welcome", value))
                 self.ask_photo(chat_id)
             else:
                 reask[step](chat_id)  # continue the report in the new language
             return
-        if kind == "pass" and step == "passable" and value in ("no", "partly", "yes"):
-            draft["passable"] = value
-            self.ask_hazard(chat_id)
-        elif kind == "haz" and step == "hazard":
-            draft["hazard"] = value if value in HAZARDS else None
-            self.ask_place(chat_id)
-        elif kind == "place" and step == "place":
-            draft["place_type"] = value if value in PLACES else None
-            self.ask_comment(chat_id)
-        elif kind == "com" and step == "comment":
-            draft["comment"] = ""
-            self.ask_confirm(chat_id)
-        elif kind == "ok" and step == "confirm":
+        if kind == "ok" and step == "confirm":
             if value == "send":
                 self.submit(chat_id)
             else:
@@ -380,14 +322,9 @@ class LanternBot:
         L = self.lang(chat_id)
         d = self.drafts[chat_id]
         self.send(chat_id, t("sending", L))
-        fields = {"lat": str(d["lat"]), "lon": str(d["lon"]), "passable": d["passable"],
+        # only photo + place: the server's model decides what is there and whether people can get through
+        fields = {"lat": str(d["lat"]), "lon": str(d["lon"]),
                   "device_id": self.device_id(d["user_id"]), "channel": "telegram"}
-        if d.get("hazard"):
-            fields["hazard"] = d["hazard"]
-        if d.get("place_type"):
-            fields["place_type"] = d["place_type"]
-        if d.get("comment"):
-            fields["comment"] = d["comment"]
         ext = {"image/png": "png", "image/webp": "webp", "image/heic": "heic"}.get(d["mime"], "jpg")
         try:
             resp = self.api.post("/reports", data=fields,

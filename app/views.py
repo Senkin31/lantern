@@ -181,7 +181,8 @@ class Views:
     def report(self, r, role: str) -> dict:
         d = {
             "id": r["id"], "timestamp": r["timestamp"], "photo_url": _photo_url(r["photo_path"]),
-            "lat": r["lat"], "lon": r["lon"], "passable": r["passable"], "hazard": r["hazard"],
+            "lat": r["lat"], "lon": r["lon"], "passable": r["passable"], "passable_by": r["passable_by"],
+            "hazard": r["hazard"],
             "place_type": r["place_type"], "comment": r["comment"],
         }
         if role == "inspector":
@@ -402,6 +403,7 @@ class Views:
             ) if f],
             "resident_photos": [{"photo_url": _photo_url(r["photo_path"]), "timestamp": r["timestamp"],
                                  "riga_time": fmt_riga(parse_ts(r["timestamp"])), "passable": r["passable"],
+                                 "passable_by": r["passable_by"],
                                  "hazard": r["hazard"], "comment": r["comment"],
                                  "registration_no": r["registration_no"]}
                                 for r in reps if r["photo_path"]],  # no device ids

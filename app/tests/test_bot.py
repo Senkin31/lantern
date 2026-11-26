@@ -57,14 +57,11 @@ def make_bot(client, tmp_path):
     return bot, fake
 
 
-def walk_report(bot, fake, chat, comment="Sniega valnis"):
+def walk_report(bot, fake, chat):
+    """The whole resident flow: photo, location, Send. No questions: the model reads the photo."""
     bot.handle_update(fake.msg(chat, photo=[{"file_id": "small", "width": 90, "height": 60},
                                             {"file_id": "big", "width": 1280, "height": 960}]))
     bot.handle_update(fake.msg(chat, location={"latitude": 56.9600, "longitude": 24.1300}))
-    bot.handle_update(fake.cb(chat, "pass:no"))
-    bot.handle_update(fake.cb(chat, "haz:snow"))
-    bot.handle_update(fake.cb(chat, "place:crossing"))
-    bot.handle_update(fake.msg(chat, text=comment))
     bot.handle_update(fake.cb(chat, "ok:send"))
 
 
@@ -86,16 +83,18 @@ def test_report_through_bot_and_status_push(make_client, tmp_path):
     walk_report(bot, fake, USER)
     # it downloaded the largest photo size
     assert ("getFile", {"file_id": "big"}) in fake.sent
-    # a summary was shown and the user confirmed before sending
+    # a summary was shown and the user confirmed before sending; nothing else was asked
     assert any("Check and confirm" in x for x in fake.texts(USER))
+    assert not any("get through" in x or "What is there?" in x for x in fake.texts(USER))
     last = fake.texts(USER)[-1]
     assert "Thank you, signal received" in last
 
     rows = engine.db.q("SELECT * FROM reports")
     assert len(rows) == 1
     r = rows[0]
-    assert r["channel"] == "telegram" and r["passable"] == "no" and r["hazard"] == "snow"
-    assert r["place_type"] == "crossing" and r["comment"] == "Sniega valnis"
+    # "can people get through?" is no longer asked: the model's accept stands in, marked as the AI's
+    assert r["channel"] == "telegram" and r["passable"] == "no" and r["passable_by"] == "ai"
+    assert r["place_type"] is None and r["comment"] == ""
     assert r["device_id"] == bot.device_id(USER) and str(USER) not in r["device_id"] and len(r["device_id"]) == 16
     assert r["ticket"] in last
     alert_id = r["alert_id"]
@@ -129,20 +128,16 @@ def test_rejected_photo_and_bad_input(make_client, tmp_path):
     # location before a photo -> asks for a photo
     bot.handle_update(fake.msg(chat, location={"latitude": 56.95, "longitude": 24.1}))
     assert "Сначала пришлите фото" in fake.texts(chat)[-1]
-    # too long comment is refused
     bot.handle_update(fake.msg(chat, photo=[{"file_id": "p", "width": 10, "height": 10}]))
     bot.handle_update(fake.msg(chat, location={"latitude": 56.95, "longitude": 24.1}))
-    bot.handle_update(fake.cb(chat, "pass:partly"))
-    bot.handle_update(fake.cb(chat, "haz:skip"))
-    bot.handle_update(fake.cb(chat, "place:skip"))
-    bot.handle_update(fake.msg(chat, text="x" * 201))
-    assert "длиннее 200" in fake.texts(chat)[-1]
-    bot.handle_update(fake.cb(chat, "com:skip"))
+    bot.handle_update(fake.msg(chat, text="тут сугроб"))                 # text at the Send step: use the buttons
+    assert "Выберите одну из кнопок" in fake.texts(chat)[-1]
     bot.handle_update(fake.cb(chat, "ok:send"))
     assert "не похоже на опасный тротуар" in fake.texts(chat)[-1]
     rows = engine.db.q("SELECT * FROM reports")
     assert len(rows) == 1 and rows[0]["relevant"] == "reject" and rows[0]["alert_id"] is None
     assert rows[0]["hazard"] is None and rows[0]["place_type"] is None
+    assert rows[0]["passable"] == "yes" and rows[0]["passable_by"] == "ai"   # the model saw nothing wrong
     assert bot.check_statuses() == 0  # rejected tickets are not tracked
 
 
@@ -184,10 +179,6 @@ def test_report_with_typed_coordinates(make_client, tmp_path):
     assert "paste coordinates" in fake.texts(chat)[-1]
     bot.handle_update(fake.msg(chat, text="56.9496, 24.1052"))         # Telegram on a computer
     assert "Location received" in " ".join(fake.texts(chat)[-2:])
-    bot.handle_update(fake.cb(chat, "pass:no"))
-    bot.handle_update(fake.cb(chat, "haz:skip"))
-    bot.handle_update(fake.cb(chat, "place:skip"))
-    bot.handle_update(fake.cb(chat, "com:skip"))
     bot.handle_update(fake.cb(chat, "ok:send"))
     row = engine.db.q("SELECT lat, lon FROM reports")[0]
     assert (row["lat"], row["lon"]) == (56.9496, 24.1052)

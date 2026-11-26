@@ -15,7 +15,7 @@ T = {
         "fix_due_at": "Fix by (+24 h)", "done_reported_at": "Contractor pressed \"done\"",
         "verified_at": "Confirmed (clear frame / inspector)",
         "act": "Defect act (suggested)", "notice": "Letter to the contractor (suggested)",
-        "no": "impassable", "partly": "partly passable", "yes": "passable",
+        "no": "impassable", "partly": "partly passable", "yes": "passable", "by_ai": "AI photo assessment",
         "title": "Evidence package", "alert": "alert", "generated": "Generated", "riga": "Riga", "status": "status",
         "overdue": "OVERDUE", "place": "Place", "district": "District", "contractor": "Contractor",
         "camera_zone": "Camera / zone", "resident": "resident report", "place_type": "Place type",
@@ -37,7 +37,7 @@ T = {
         "fix_due_at": "Novērst līdz (+24 h)", "done_reported_at": "Darbuzņēmējs nospieda \"notīrīts\"",
         "verified_at": "Apstiprināts (tīrs kadrs / inspektors)",
         "act": "Defektu akts (ieteikums)", "notice": "Vēstule darbuzņēmējam (ieteikums)",
-        "no": "nevar paiet", "partly": "daļēji var paiet", "yes": "var paiet",
+        "no": "nevar paiet", "partly": "daļēji var paiet", "yes": "var paiet", "by_ai": "MI foto vērtējums",
         "title": "Pierādījumu pakete", "alert": "trauksme", "generated": "Sagatavots", "riga": "Rīga", "status": "statuss",
         "overdue": "NOKAVĒTS", "place": "Vieta", "district": "Rajons", "contractor": "Darbuzņēmējs",
         "camera_zone": "Kamera / zona", "resident": "iedzīvotāja ziņojums", "place_type": "Vietas tips",
@@ -76,7 +76,7 @@ def render(ev: dict, tile_url: str, tile_attribution: str, images_credit: str, s
         for f in ev["frames"]) or f"<p class=muted>{_e(t['no_frames'])}</p>"
     photos = "".join(
         f"""<figure><img src="{_e(r['photo_url'])}" alt="{_e(t['photo'])}"><figcaption>{_e(r['riga_time'])} ({_e(t['riga'])})
-· {_e(t.get(r['passable'], r['passable']))}{' · ' + _e(r['hazard']) if r['hazard'] else ''}
+· {_e(t.get(r['passable'], r['passable']))}{' (' + _e(t.get('by_ai', 'AI')) + ')' if r.get('passable_by') == 'ai' else ''}{' · ' + _e(r['hazard']) if r['hazard'] else ''}
 {'<br>&laquo;' + _e(r['comment']) + '&raquo;' if r['comment'] else ''}
 {'<br>' + _e(t['reg']) + ' ' + _e(r['registration_no']) if r['registration_no'] else ''}</figcaption></figure>"""
         for r in ev["resident_photos"]) or f"<p class=muted>{_e(t['no_photos'])}</p>"

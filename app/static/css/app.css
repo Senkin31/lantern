@@ -251,6 +251,10 @@ button, select, input, textarea { font: inherit; color: inherit; }
   font-weight: 700; font-size: 12px; padding: 1px 6px; box-shadow: var(--shadow); }
 .map-legend { background: var(--surface); color: var(--text); padding: 8px 10px; border-radius: 8px; box-shadow: var(--shadow); font-size: 12px; line-height: 1.7; }
 .map-legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.map-legend i.legend-bubble { width: 15px; height: 15px; border-radius: 50%; color: #fff; font-size: 9px; font-style: normal;
+  font-weight: 700; text-align: center; line-height: 15px; vertical-align: -3px; }
+.bubble span { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%;
+  color: #fff; font-weight: 700; font-size: 14px; border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .35); cursor: pointer; }
 
 @media (max-width: 960px) {
   .workspace { grid-template-columns: 1fr; grid-template-rows: 46vh auto; }

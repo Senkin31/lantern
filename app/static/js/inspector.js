@@ -35,6 +35,7 @@
     S.map = L$.makeMap($("#map"), S.meta);
     drawCameraZones();
     addLegend();
+    S.map.on("zoomend", applyView);
     await refresh();
     setInterval(refresh, 3000);
     setInterval(tickCountdown, 1000);
@@ -141,6 +142,7 @@
   // ---------------------------------------------------------------- map
   function drawCameraZones() {
     const group = L.layerGroup().addTo(S.map);
+    S.camGroup = group;
     const bounds = [];
     (S.meta.cameras || []).forEach((cam) => {
       bounds.push([cam.lat, cam.lon]);
@@ -171,7 +173,8 @@
         + `<div><i style="background:${c.reopened}"></i>${esc(t("st_reopened"))}</div>`
         + `<div><i style="background:${c.verified}"></i>${esc(t("st_verified"))}</div>`
         + `<div><i style="background:${c.cleared}"></i>${esc(t("st_cleared_in_time"))}</div>`
-        + `<div><i style="background:${c.high};height:5px;border-radius:3px;margin-top:4px"></i>${esc(t("sectionLegend"))}</div>`;
+        + `<div><i style="background:${c.high};height:5px;border-radius:3px;margin-top:4px"></i>${esc(t("sectionLegend"))}</div>`
+        + `<div><i class="legend-bubble" style="background:${c.medium}">3</i>${esc(t("bubbleLegend"))}</div>`;
       return d;
     };
     S.legend.addTo(S.map);
@@ -208,8 +211,66 @@
         dashArray: s.status === "watch" ? "8 8" : null }).addTo(S.sectionLayer);
       const who = [s.camera ? "📷" : "", s.residents ? `${s.residents} 👤` : ""].filter(Boolean).join(" · ");
       line.bindTooltip(`${esc(s.name || t("sectionNoName"))} · ${s.length_m} m<br>${esc(t("lv_" + s.urgency_level))} · ${who} · #${s.alert_ids.join(", #")}`);
-      line.on("click", () => select(s.alert_ids[0]));
+      line.on("click", () => {
+        S.map.fitBounds(line.getBounds(), { padding: [80, 80], maxZoom: 18 });
+        select(s.alert_ids[0], false);
+      });
       line.bringToBack();
+    });
+  }
+
+  // ---------------------------------------------------------------- zoom levels
+  // City view (zoom <= 16): street lines only; an alert that is not on a line is a dot, and dots that crowd
+  // become one count bubble. Block view (zoom >= 17): every dot and camera zone, the line fades behind them.
+  const DETAIL_ZOOM = 17;
+  const BUBBLE_PX = 46;
+  const RANK = (a) => (a.status === "reopened" ? 5 : a.status === "watch" ? 1 : ({ high: 4, medium: 3, low: 2 }[a.urgency_level] || 2));
+
+  function show(layer, on) {
+    if (!layer) return;
+    if (on && !S.map.hasLayer(layer)) layer.addTo(S.map);
+    if (!on && S.map.hasLayer(layer)) layer.remove();
+  }
+
+  function applyView() {
+    if (!S.map) return;
+    const detail = S.map.getZoom() >= DETAIL_ZOOM;
+    show(S.camGroup, detail);
+    if (S.sectionLayer) S.sectionLayer.eachLayer((l) => l.setStyle(detail ? { weight: 5, opacity: 0.35 } : { weight: 10, opacity: 0.85 }));
+    const onLine = new Set((S.sections || []).flatMap((s) => s.alert_ids));
+    const loose = [];
+    S.alerts.forEach((a) => {
+      const l = S.layers.get(a.id);
+      if (!l) return;
+      const visible = detail || a.id === S.selected;
+      show(l.marker, visible);
+      show(l.poly, visible);
+      if (!visible && !L$.isClosed(a) && !onLine.has(a.id)) loose.push(a);
+    });
+    if (!S.bubbleLayer) S.bubbleLayer = L.layerGroup().addTo(S.map);
+    const groups = [];
+    loose.forEach((a) => {
+      const p = S.map.latLngToLayerPoint([a.lat, a.lon]);
+      const g = groups.find((x) => x.p.distanceTo(p) <= BUBBLE_PX);
+      if (g) g.items.push(a); else groups.push({ p, items: [a] });
+    });
+    groups.forEach((g) => { if (g.items.length === 1) show(S.layers.get(g.items[0].id).marker, true); });
+    // rebuild the bubbles only when they change: a bubble replaced every 3 s refresh would swallow clicks
+    const key = detail ? "detail" : S.map.getZoom() + "|" + groups.filter((g) => g.items.length > 1)
+      .map((g) => g.items.map((a) => `${a.id}:${a.status}:${a.urgency_level}`).join(",")).join(";");
+    if (key === S.bubbleKey) return;
+    S.bubbleKey = key;
+    S.bubbleLayer.clearLayers();
+    groups.forEach((g) => {
+      if (g.items.length === 1) return;
+      const worst = g.items.reduce((m, a) => (RANK(a) > RANK(m) ? a : m));
+      const col = L$.alertColor(worst);
+      const b = L.latLngBounds(g.items.map((a) => [a.lat, a.lon]));
+      const n = g.items.length;
+      L.marker(b.getCenter(), { icon: L.divIcon({ className: "bubble", html: `<span style="background:${col}">${n}</span>`, iconSize: [34, 34] }) })
+        .bindTooltip(esc(t("bubbleTip", { n })))
+        .on("click", () => S.map.fitBounds(b.pad(0.3), { maxZoom: DETAIL_ZOOM + 1 }))
+        .addTo(S.bubbleLayer);
     });
   }
 
@@ -239,7 +300,7 @@
         l.marker.setRadius(st.marker.radius);
         l.marker.setTooltipContent(tip);
       }
-      if (!L$.isClosed(a)) l.marker.bringToFront();
+      if (!L$.isClosed(a) && S.map.hasLayer(l.marker)) l.marker.bringToFront();
       bounds.push([a.lat, a.lon]);
     });
     S.layers.forEach((l, id) => { if (!seen.has(id)) { if (l.poly) l.poly.remove(); l.marker.remove(); S.layers.delete(id); } });
@@ -247,16 +308,17 @@
       S.fitted = true;
       S.map.fitBounds(L.latLngBounds(bounds), { padding: [50, 50], maxZoom: 16 });  // frame the alerts, not every camera
     }
+    applyView();
   }
 
-  function select(id) {
+  function select(id, pan = true) {
     S.selected = id;
     S.detail = null;
     renderPanel();
     updateMap();
     api(`/alerts/${id}?role=inspector`).then((d) => { S.detail = d; renderPanel(); }).catch((e) => L$.toast(e.message, true));
     const l = S.layers.get(id);
-    if (l) S.map.panTo(l.marker.getLatLng(), { animate: true });
+    if (l && pan) S.map.panTo(l.marker.getLatLng(), { animate: true });
   }
 
   // ---------------------------------------------------------------- tabs

@@ -38,6 +38,18 @@ _COORDS = [re.compile(r"mlat=(-?\d{1,2}\.\d+)&mlon=(-?\d{1,3}\.\d+)"),
            re.compile(r"(?<![\d.])(-?\d{1,2}\.\d{3,})\s*[,;/ ]\s*(-?\d{1,3}\.\d{3,})(?![\d.])")]
 
 
+def location_source(msg: dict, typed) -> str:
+    """gps: the phone measured it (Telegram adds horizontal_accuracy, or it is a live location);
+    pin: a point picked on the map or a venue; typed: coordinates or a map link pasted as text.
+    Only gps can send the contractor on its own; the others wait for the inspector or a second person."""
+    if typed:
+        return "typed"
+    loc = msg.get("location") or {}
+    if msg.get("venue") is None and (loc.get("horizontal_accuracy") is not None or loc.get("live_period")):
+        return "gps"
+    return "pin"
+
+
 def coords_from_text(text: str) -> Optional[tuple]:
     """(lat, lon) from typed coordinates or a map link, else None."""
     for rx in _COORDS:
@@ -239,6 +251,7 @@ class LanternBot:
             loc = msg.get("location") or msg["venue"]["location"]
             if step in ("location", "confirm") and draft.get("photo"):
                 draft["lat"], draft["lon"] = float(loc["latitude"]), float(loc["longitude"])
+                draft["loc_source"] = location_source(msg, typed)
                 self.send(chat_id, t("location_ok", L), {"remove_keyboard": True})
                 self.ask_confirm(chat_id)  # no more questions: the photo says what is there and how bad
             else:
@@ -323,7 +336,7 @@ class LanternBot:
         d = self.drafts[chat_id]
         self.send(chat_id, t("sending", L))
         # only photo + place: the server's model decides what is there and whether people can get through
-        fields = {"lat": str(d["lat"]), "lon": str(d["lon"]),
+        fields = {"lat": str(d["lat"]), "lon": str(d["lon"]), "location_source": d.get("loc_source") or "pin",
                   "device_id": self.device_id(d["user_id"]), "channel": "telegram"}
         ext = {"image/png": "png", "image/webp": "webp", "image/heic": "heic"}.get(d["mime"], "jpg")
         try:
@@ -363,7 +376,7 @@ class LanternBot:
             if result.get("same_photo"):
                 text += "\n\n" + t("same_photo", L)
             self.send(chat_id, text)
-        log.info("report %s from chat sent: %s", ticket, rel)
+        log.info("report %s from chat sent: %s, location from %s", ticket, rel, d.get("loc_source"))
 
     def _merged(self, ticket: str) -> bool:
         st = self.ticket(ticket)

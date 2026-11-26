@@ -182,6 +182,7 @@ class Views:
         d = {
             "id": r["id"], "timestamp": r["timestamp"], "photo_url": _photo_url(r["photo_path"]),
             "lat": r["lat"], "lon": r["lon"], "passable": r["passable"], "passable_by": r["passable_by"],
+            "loc_source": r["loc_source"], "flags": json.loads(r["flags"]) if r["flags"] else [],
             "hazard": r["hazard"],
             "place_type": r["place_type"], "comment": r["comment"],
         }
@@ -324,7 +325,8 @@ class Views:
         """The three KPIs from the challenge, for the inspector screen.
         KPI 1: jobs the inspector closed as a false alarm / hours of camera work (first to last signal per camera).
         KPI 2: share of jobs that reached the contractor <= 15 min after max(snow seen, deadline).
-        KPI 3: share of signals with an exact location (cameras always; resident reports with a map point)."""
+        KPI 3: share of signals with an exact location (cameras always; resident reports located by the
+        phone's GPS or sent by a trusted caller; a picked pin, typed coordinates or a map tap is approximate)."""
         hours = 0.0
         for c in self.db.q("SELECT MIN(timestamp) AS a, MAX(timestamp) AS b FROM signals GROUP BY camera_id"):
             hours += (_seconds(c["a"], c["b"]) or 0) / 3600.0
@@ -335,8 +337,8 @@ class Views:
         notify = [n for n in (self.notify_seconds(a) for a in self.db.q(
             "SELECT * FROM alerts WHERE notified_at IS NOT NULL AND COALESCE(false_alarm, 0) = 0")) if n is not None]
         sig = self.db.one("SELECT COUNT(*) AS n, SUM(lat IS NOT NULL AND lon IS NOT NULL) AS p FROM signals")
-        rep = self.db.one("SELECT COUNT(*) AS n, SUM(lat IS NOT NULL AND lon IS NOT NULL) AS p FROM reports "
-                          "WHERE relevant != 'reject'")
+        rep = self.db.one("SELECT COUNT(*) AS n, SUM(lat IS NOT NULL AND (loc_source IS NULL OR loc_source = 'gps')) "
+                          "AS p FROM reports WHERE relevant != 'reject'")
         total, precise = sig["n"] + rep["n"], (sig["p"] or 0) + (rep["p"] or 0)
         return {
             "false_alarms_per_hour": round(false_jobs / hours, 3) if hours else None,

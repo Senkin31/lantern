@@ -107,12 +107,24 @@ The rules are in [spam.py](spam.py). They cover every channel (web form, Telegra
 
 Example: one phone sends 99 pictures of the same spot. 6 are stored, the place still has 1 vote, `/analyze` is called once, the other 93 are refused, and the sender is muted for a day. This case is in `tests/test_spam.py`.
 
+### Fake reports (wrong place, picture of a screen, repeat offenders)
+
+Spam limits stop floods; these rules stop a single convincing fake. None of them refuses a report: they decide whether it may **send the contractor on its own** or must **wait for the inspector** (`review` / `watch`). The inspector sees why on the report.
+
+| Case | How it is spotted | What happens |
+| --- | --- | --- |
+| Place picked on a map, typed, or tapped on the web map | `location_source`: `gps` (phone measured it: Telegram adds `horizontal_accuracy`, the web form used "Use my location"), `pin`, `typed`, `map` | Only a GPS place, a camera or **two different people** can send the contractor. One approximate report waits for the inspector. Flag `approx_location`. KPI 3 counts only exact places. |
+| Screenshot, webcam frame, stock photo | the model's note (`screenshot`, `webcam`, `stock photo`, `watermark`…) or its optional `source` field | `accept` becomes `review`. Flag `not_street_photo`. |
+| Sender with false alarms | 2+ alerts this sender confirmed were closed by the inspector as "False alarm" (`FALSE_ALARM_STRIKES`) | Their `accept` becomes `review`. Flag `false_alarm_sender`. Other people are not affected. |
+
+API callers that send no `location_source` (demo script, replay) count as exact. Tests: `tests/test_trust.py`.
+
 ## API
 
 | Method | Path | |
 | --- | --- | --- |
 | POST | `/signals` | camera signal (JSON, contract from the brief) → `201 {"alert_id": 12 \| null}` |
-| POST | `/reports` | multipart: `photo`, `lat`, `lon` (+ `passable`, `hazard`: optional, residents are no longer asked; when missing the server takes them from the model: accept → `no`, review → `partly`, reject → `yes`, hint → hazard, stored with `passable_by = ai`; `place_type`, `comment`, `device_id`, `timestamp`, `channel`, `registration_no` for a formal council complaint) |
+| POST | `/reports` | multipart: `photo`, `lat`, `lon` (+ `passable`, `hazard`: optional, residents are no longer asked; when missing the server takes them from the model: accept → `no`, review → `partly`, reject → `yes`, hint → hazard, stored with `passable_by = ai`; `location_source`: `gps` | `pin` | `typed` | `map`; `place_type`, `comment`, `device_id`, `timestamp`, `channel`, `registration_no` for a formal council complaint) |
 | GET | `/reports/ticket/{ticket}` | resident's status for one report |
 | GET | `/reports?role=inspector&relevant=review\|reject\|all` | moderation list |
 | POST | `/reports/{id}/moderate` | `{"decision": "accept\|reject"}` |

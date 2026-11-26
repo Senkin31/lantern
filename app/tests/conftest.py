@@ -35,6 +35,8 @@ def make_client(tmp_path, monkeypatch):
 
     def fake_analyze(url, timeout, photo, filename, content_type, comment):
         rel = verdicts.get(filename, "accept")
+        if isinstance(rel, dict):  # a full answer, e.g. {"note": "webcam screenshot"}
+            return {"relevant": "accept", "score": 0.9, "hint": "snow", "note": "", **rel}
         return {"relevant": rel, "score": 0.9, "hint": "snow", "note": f"test verdict {rel}"}
 
     monkeypatch.setattr(analyze_mod, "analyze", fake_analyze)

@@ -61,7 +61,8 @@ def walk_report(bot, fake, chat):
     """The whole resident flow: photo, location, Send. No questions: the model reads the photo."""
     bot.handle_update(fake.msg(chat, photo=[{"file_id": "small", "width": 90, "height": 60},
                                             {"file_id": "big", "width": 1280, "height": 960}]))
-    bot.handle_update(fake.msg(chat, location={"latitude": 56.9600, "longitude": 24.1300}))
+    # "Send my location" from a phone: Telegram adds the GPS accuracy
+    bot.handle_update(fake.msg(chat, location={"latitude": 56.9600, "longitude": 24.1300, "horizontal_accuracy": 12}))
     bot.handle_update(fake.cb(chat, "ok:send"))
 
 
@@ -95,6 +96,7 @@ def test_report_through_bot_and_status_push(make_client, tmp_path):
     # "can people get through?" is no longer asked: the model's accept stands in, marked as the AI's
     assert r["channel"] == "telegram" and r["passable"] == "no" and r["passable_by"] == "ai"
     assert r["place_type"] is None and r["comment"] == ""
+    assert r["loc_source"] == "gps"  # measured by the phone: may send the contractor on its own
     assert r["device_id"] == bot.device_id(USER) and str(USER) not in r["device_id"] and len(r["device_id"]) == 16
     assert r["ticket"] in last
     alert_id = r["alert_id"]
@@ -180,5 +182,15 @@ def test_report_with_typed_coordinates(make_client, tmp_path):
     bot.handle_update(fake.msg(chat, text="56.9496, 24.1052"))         # Telegram on a computer
     assert "Location received" in " ".join(fake.texts(chat)[-2:])
     bot.handle_update(fake.cb(chat, "ok:send"))
-    row = engine.db.q("SELECT lat, lon FROM reports")[0]
-    assert (row["lat"], row["lon"]) == (56.9496, 24.1052)
+    row = engine.db.q("SELECT lat, lon, loc_source FROM reports")[0]
+    assert (row["lat"], row["lon"], row["loc_source"]) == (56.9496, 24.1052, "typed")
+
+
+def test_location_source_from_telegram():
+    from app.bot.telegram_bot import location_source
+    assert location_source({"location": {"latitude": 1, "longitude": 2, "horizontal_accuracy": 8}}, None) == "gps"
+    assert location_source({"location": {"latitude": 1, "longitude": 2, "live_period": 900}}, None) == "gps"
+    assert location_source({"location": {"latitude": 1, "longitude": 2}}, None) == "pin"     # picked on the map
+    assert location_source({"location": {"latitude": 1, "longitude": 2},
+                            "venue": {"location": {"latitude": 1, "longitude": 2}}}, None) == "pin"
+    assert location_source({}, (56.9, 24.1)) == "typed"

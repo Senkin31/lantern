@@ -4,6 +4,7 @@ Everything that decides what an alert is lives here; the HTTP layer only validat
 input and the views only filter output by role. Every rule reads self.clock.now().
 """
 import json
+import re
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
@@ -23,6 +24,13 @@ PLACE_TYPES = ("sidewalk", "crossing", "ramp", "stop", "path", "square", "other"
 PASSABLE = ("no", "partly", "yes")
 REPORT_HAZARDS = ("snow", "ice", "icicles", "other")
 RELEVANT = ("accept", "review", "reject")
+# where a report's location came from: the phone's GPS is exact; a pin someone picked, typed coordinates
+# and a tap on the web map can point anywhere. None = a trusted API caller (demo, replay).
+LOCATION_SOURCES = ("gps", "pin", "typed", "map")
+EXACT_LOCATION = (None, "gps")
+# the model's note (or its optional "source") says this is not a photo taken on the street
+SECONDHAND = re.compile(r"screen\s?shot|screen capture|photo of a (?:screen|monitor|display)|web\s?cam|"
+                        r"web camera|cctv|surveillance|stock (?:photo|image)|watermark", re.I)
 SNOW = ("snow", "blocked")
 NOT_CLOSED_SQL = "status NOT IN ('verified', 'cleared_in_time')"
 
@@ -284,6 +292,17 @@ class Engine:
         ts = parse_ts(r.get("timestamp")) or self.clock.now()
         now = fmt_ts(self.clock.now())
         relevant = analysis.get("relevant") if analysis.get("relevant") in RELEVANT else "review"
+        # --- anti-fake: these never block a report, they only make the inspector look first
+        flags = []
+        if r.get("loc_source") not in EXACT_LOCATION:
+            flags.append("approx_location")  # cannot send the contractor alone (see dispatchable)
+        if relevant == "accept" and (analysis.get("source") in ("screenshot", "webcam", "stock", "screen")
+                                     or SECONDHAND.search(analysis.get("note") or "")):
+            relevant = "review"
+            flags.append("not_street_photo")
+        if relevant == "accept" and self.false_alarms_of(r["device_id"]) >= self.cfg.false_alarm_strikes:
+            relevant = "review"
+            flags.append("false_alarm_sender")
         with self.db.lock:
             alert_id = None
             duplicate = False
@@ -308,18 +327,26 @@ class Engine:
             report_id = self.db.run(
                 "INSERT INTO reports(alert_id, ticket, channel, photo_path, lat, lon, passable, hazard, place_type, "
                 "comment, device_id, timestamp, relevant, ai_score, ai_hint, ai_note, counted, duplicate, received_at, "
-                "photo_sha256, photo_dhash, ip_hash, reuse_of, registration_no, passable_by) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "photo_sha256, photo_dhash, ip_hash, reuse_of, registration_no, passable_by, loc_source, flags) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (alert_id, ticket, channel, photo_path, r["lat"], r["lon"], r["passable"], r.get("hazard"),
                  r.get("place_type"), r.get("comment") or "", r["device_id"], fmt_ts(ts), relevant,
                  analysis.get("score"), analysis.get("hint"), analysis.get("note"),
                  1 if counted else 0, 1 if duplicate else 0, now, photo_sha256, photo_dhash, ip_hash, reuse_of,
-                 registration_no, r.get("passable_by") or "resident"))
+                 registration_no, r.get("passable_by") or "resident", r.get("loc_source"),
+                 json.dumps(flags) if flags else None))
             if alert_id is not None:
                 self._bump_evidence(alert_id, ts)
                 self.recompute(alert_id)
                 self._maybe_open(alert_id, fresh=fresh)
             return self.db.one("SELECT * FROM reports WHERE id = ?", (report_id,))
+
+    def false_alarms_of(self, device_id: Optional[str]) -> int:
+        """Alerts the inspector closed as "false alarm" that this sender had confirmed with a counted photo."""
+        if not device_id:
+            return 0
+        return self.db.one("SELECT COUNT(DISTINCT a.id) AS n FROM alerts a JOIN reports r ON r.alert_id = a.id "
+                           "WHERE a.false_alarm = 1 AND r.counted = 1 AND r.device_id = ?", (device_id,))["n"]
 
     def moderate_report(self, report_id: int, decision: str, actor: str):
         """Inspector decides on a `review` (or overrides a `reject`) report."""
@@ -447,8 +474,12 @@ class Engine:
         """Snow is still there per reliable evidence, and someone can be sent."""
         if not a["contractor_id"]:
             return False
-        has_counted = self.db.one("SELECT 1 FROM reports WHERE alert_id = ? AND counted = 1",
-                                  (a["id"],)) is not None
+        # residents can send the contractor when the place is certain: one report located by the phone's
+        # GPS, or two different people. One picked / typed / tapped point alone waits for the inspector.
+        counted = self.db.q("SELECT device_id, loc_source FROM reports WHERE alert_id = ? AND counted = 1",
+                            (a["id"],))
+        has_counted = (any(c["loc_source"] in EXACT_LOCATION for c in counted)
+                       or len({c["device_id"] for c in counted}) >= 2)
         last = self.db.one("SELECT hazard_class, confidence FROM signals WHERE alert_id = ? "
                            "ORDER BY timestamp DESC, id DESC LIMIT 1", (a["id"],))
         if last and last["hazard_class"] in SNOW and last["confidence"] < self.cfg.low_confidence:

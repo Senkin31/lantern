@@ -17,7 +17,7 @@ from . import analyze as analyze_mod
 from . import evidence as evidence_mod
 from .config import settings
 from .db import Database
-from .engine import PASSABLE, PLACE_TYPES, REPORT_HAZARDS, Engine, RuleError
+from .engine import LOCATION_SOURCES, PASSABLE, PLACE_TYPES, REPORT_HAZARDS, Engine, RuleError
 from .registry import Registry
 from .segments import Sidewalks
 from .spam import SpamGuard, photo_hashes
@@ -144,6 +144,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         timestamp: Optional[str] = Form(None),
         channel: Optional[str] = Form(None),
         registration_no: Optional[str] = Form(None),
+        location_source: Optional[str] = Form(None),  # gps | pin | typed | map (missing: trusted API caller)
     ):
         passable = passable or None
         if passable is not None and passable not in PASSABLE:
@@ -155,6 +156,9 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         if place_type is not None and place_type not in PLACE_TYPES:
             raise HTTPException(422, f"place_type must be one of {PLACE_TYPES}")
         registration_no = (registration_no or "").strip()[:40] or None
+        location_source = location_source or None
+        if location_source is not None and location_source not in LOCATION_SOURCES:
+            raise HTTPException(422, f"location_source must be one of {LOCATION_SOURCES}")
         comment = (comment or "").strip()
         if len(comment) > 200:
             raise HTTPException(422, "comment is limited to 200 characters")
@@ -227,7 +231,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         chan = channel if channel in ("web", "telegram", "whatsapp", "replay") else ("replay" if device_id else "web")
         rep = engine.ingest_report(
             {"lat": lat, "lon": lon, "passable": passable, "passable_by": passable_by, "hazard": hazard,
-             "place_type": place_type,
+             "place_type": place_type, "loc_source": location_source,
              "comment": comment, "device_id": device, "timestamp": timestamp}, analysis, name, chan,
             photo_sha256=sha, photo_dhash=dhash, ip_hash=ip_h, reuse_of=reuse_of, registration_no=registration_no)
         if rep["relevant"] == "reject" or rep["duplicate"] or rep["reuse_of"]:

@@ -183,6 +183,11 @@
     S.layers.clear();
   }
 
+  // anti-fake flags from the server: why this report waits for the inspector instead of going straight on
+  function trustChips(r) {
+    return (r.flags || []).map((f) => `<div class="chip warn" title="${esc(t("flagTip_" + f))}">${esc(t("flag_" + f))}</div>`).join("");
+  }
+
   function styleFor(a) {
     const col = L$.alertColor(a);
     const sel = S.selected === a.id;
@@ -437,6 +442,7 @@
         ${r.registration_no ? `<div class="small">${esc(t("regNo"))}: <b>${esc(r.registration_no)}</b></div>` : ""}
         <div class="small muted">${esc(t("aiSays"))}: ${esc(ai)}${r.ai_note ? ` — ${esc(r.ai_note)}` : ""}</div>
         ${r.same_photo_as ? `<div class="chip warn">${esc(t("samePhotoAs", { n: r.same_photo_as }))}</div>` : ""}
+        ${trustChips(r)}
         ${r.alert_id ? `<div class="small"><a href="#" data-alert="${r.alert_id}">${esc(t("alert"))} #${r.alert_id}</a></div>` : ""}
         ${showActions ? `<div class="actions" style="margin-top:6px">
           <button class="btn good" type="button" data-moderate="accept" data-id="${r.id}">${esc(t("accept"))}</button>
@@ -545,6 +551,7 @@
         ${r.comment ? `<div>“${esc(r.comment)}”</div>` : ""}
         ${r.registration_no ? `<div>${esc(t("regNo"))}: <b>${esc(r.registration_no)}</b></div>` : ""}
         ${r.duplicate ? `<div class="chip">${esc(t("duplicate"))}</div>` : (!r.counted ? `<div class="chip warn">${esc(t("notCounted"))} (${esc(r.relevant)})</div>` : "")}
+        ${trustChips(r)}
       </div>`).join("")}</div>` : `<p class="muted small">${esc(t("noReports"))}</p>`;
     const sigs = (d.signals || []).length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>${esc(t("time"))}</th><th>${esc(t("cls"))}</th><th class="num">${esc(t("share"))}</th><th class="num">${esc(t("conf"))}</th><th></th></tr></thead><tbody>
       ${d.signals.slice().reverse().map((s) => `<tr><td>${esc(L$.fmtTime(s.timestamp))}</td><td>${esc(L$.hazard(s.hazard_class))}</td>

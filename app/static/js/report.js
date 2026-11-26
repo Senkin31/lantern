@@ -225,8 +225,11 @@
     el.textContent = tr(key, state.locArg);
     el.className = "hint" + (cls ? " " + cls : "");
   }
-  function setPoint(lat, lon, zoom) {
+  // source: "gps" when the browser measured it, "map" when the person tapped or dragged the pin.
+  // A map point alone can't send the contractor (anyone can tap anywhere): the inspector looks first.
+  function setPoint(lat, lon, zoom, source = "map") {
     state.lat = +lat.toFixed(6); state.lon = +lon.toFixed(6);
+    state.loc_source = source;
     if (!marker) {
       const icon = L.divIcon({ className: "", html: '<div class="pin"></div>', iconSize: [30, 30], iconAnchor: [15, 30] });
       marker = L.marker([lat, lon], { draggable: true, icon, keyboard: true, title: "📍" }).addTo(map);
@@ -243,7 +246,7 @@
     setLocMsg("loc_finding");
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setPoint(pos.coords.latitude, pos.coords.longitude, 18);
+        setPoint(pos.coords.latitude, pos.coords.longitude, 18, "gps");
         setLocMsg("loc_found", { m: Math.round(pos.coords.accuracy || 0) }, "good");
       },
       () => setLocMsg(state.lat === null ? "loc_denied" : "loc_set", {}, state.lat === null ? "warn" : "good"),
@@ -288,6 +291,7 @@
     const regno = ($("regno") && $("regno").value || "").trim();
     if (regno) fd.append("registration_no", regno);
     fd.append("channel", "web");
+    fd.append("location_source", state.loc_source || "map");
     const btn = $("submit");
     btn.disabled = true;
     btn.firstElementChild.textContent = tr("sending");

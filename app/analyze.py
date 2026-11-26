@@ -7,6 +7,7 @@ No answer within 10 s -> review. While ANALYZE_URL is empty a stub answers accep
 import httpx
 
 HINTS = {"snow", "blocked", "ice", "icicles", "unknown"}
+SOURCES = {"photo", "screenshot", "webcam", "stock", "screen"}
 
 
 def analyze(url: str, timeout: float, photo: bytes, filename: str, content_type: str, comment: str) -> dict:
@@ -30,4 +31,7 @@ def analyze(url: str, timeout: float, photo: bytes, filename: str, content_type:
     except (TypeError, ValueError):
         score = None
     note = str(data.get("note") or "")[:300]
-    return {"relevant": relevant, "score": score, "hint": hint, "note": note}
+    out = {"relevant": relevant, "score": score, "hint": hint, "note": note}
+    if data.get("source") in SOURCES:  # optional: photo | screenshot | webcam | stock | screen
+        out["source"] = data["source"]
+    return out

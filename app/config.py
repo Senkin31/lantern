@@ -70,6 +70,8 @@ class Settings:
         self.reopen_after_minutes = env_float("REOPEN_AFTER_MINUTES", 0.0)  # snow after "done" -> reopened
         self.low_confidence = env_float("LOW_CONFIDENCE", 0.5)
         self.notify_kpi_minutes = env_float("NOTIFY_KPI_MINUTES", 15.0)
+        # anti-fake: a sender with this many false-alarm alerts gets only "review" (inspector checks first)
+        self.false_alarm_strikes = int(env_float("FALSE_ALARM_STRIKES", 2))
 
         self.tile_url = env("TILE_URL", "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
         self.tile_attribution = env(

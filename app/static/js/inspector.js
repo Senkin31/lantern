@@ -143,6 +143,7 @@
   function drawCameraZones() {
     const group = L.layerGroup().addTo(S.map);
     S.camGroup = group;
+    S.zoneLines = new Map();  // zone_id -> grey outline, hidden when a square already shows that place
     const bounds = [];
     (S.meta.cameras || []).forEach((cam) => {
       bounds.push([cam.lat, cam.lon]);
@@ -150,7 +151,7 @@
         if (!z.map_polygon) return;
         const ll = L$.toLatLngs(z.map_polygon);
         ll.forEach((p) => bounds.push(p));
-        L.polygon(ll, { color: "#7a8596", weight: 1, dashArray: "3 4", fill: false, interactive: false }).addTo(group);
+        S.zoneLines.set(z.zone_id, L.polygon(ll, { color: "#7a8596", weight: 1, dashArray: "3 4", fill: false, interactive: false }).addTo(group));
       });
       L.circleMarker([cam.lat, cam.lon], { radius: 3, color: "#7a8596", weight: 1, fillOpacity: .6, interactive: true })
         .bindTooltip(esc(cam.name || cam.camera_id)).addTo(group);
@@ -240,17 +241,22 @@
     if (!S.map) return;
     const detail = S.map.getZoom() >= DETAIL_ZOOM;
     show(S.camGroup, detail);
+    // a square stays strong up close: it replaces the camera rectangle, only the dot sits on top of it
     if (S.sectionLayer) S.sectionLayer.eachLayer((l) => l.setStyle(l instanceof L.Polygon
-      ? (detail ? { weight: 2, opacity: 0.5, fillOpacity: 0.12 } : { weight: 3, opacity: 0.9, fillOpacity: 0.35 })
+      ? (detail ? { weight: 3, opacity: 0.9, fillOpacity: 0.3 } : { weight: 3, opacity: 0.9, fillOpacity: 0.35 })
       : (detail ? { weight: 5, opacity: 0.35 } : { weight: 10, opacity: 0.85 })));
     const onLine = new Set((S.sections || []).flatMap((s) => s.alert_ids));
+    // alerts painted as a whole square: their camera rectangle would only cover the square's shape
+    const inSquare = new Set((S.sections || []).filter((s) => s.shape === "area").flatMap((s) => s.alert_ids));
+    const squareZones = new Set(S.alerts.filter((a) => inSquare.has(a.id) && a.zone_id).map((a) => a.zone_id));
+    if (S.zoneLines) S.zoneLines.forEach((line, zid) => line.setStyle({ opacity: squareZones.has(zid) ? 0 : 1 }));
     const loose = [];
     S.alerts.forEach((a) => {
       const l = S.layers.get(a.id);
       if (!l) return;
       const visible = detail || a.id === S.selected;
       show(l.marker, visible);
-      show(l.poly, visible);
+      show(l.poly, visible && !inSquare.has(a.id));
       if (!visible && !L$.isClosed(a) && !onLine.has(a.id)) loose.push(a);
     });
     if (!S.bubbleLayer) S.bubbleLayer = L.layerGroup().addTo(S.map);

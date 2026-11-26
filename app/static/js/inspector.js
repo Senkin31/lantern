@@ -153,7 +153,11 @@
       L.circleMarker([cam.lat, cam.lon], { radius: 3, color: "#7a8596", weight: 1, fillOpacity: .6, interactive: true })
         .bindTooltip(esc(cam.name || cam.camera_id)).addTo(group);
     });
-    if (bounds.length) S.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+    // the Finnish demo cameras are ~500 km away: start on Riga when there are cameras there, else on all cameras
+    const riga = L.latLng(56.9496, 24.1052);
+    const home = bounds.filter((p) => riga.distanceTo(L.latLng(p)) < 50000);
+    const view = home.length ? home : bounds;
+    if (view.length) S.map.fitBounds(view, { padding: [40, 40], maxZoom: 16 });
   }
 
   function addLegend() {
@@ -221,9 +225,7 @@
     S.layers.forEach((l, id) => { if (!seen.has(id)) { if (l.poly) l.poly.remove(); l.marker.remove(); S.layers.delete(id); } });
     if (!S.fitted && bounds.length) {
       S.fitted = true;
-      const b = L.latLngBounds(bounds);
-      (S.meta.cameras || []).forEach((c) => b.extend([c.lat, c.lon]));
-      S.map.fitBounds(b, { padding: [50, 50], maxZoom: 16 });
+      S.map.fitBounds(L.latLngBounds(bounds), { padding: [50, 50], maxZoom: 16 });  // frame the alerts, not every camera
     }
   }
 
@@ -414,8 +416,14 @@
     const head = `<div class="panel-head"><h2>${esc(t("tabStats"))}</h2>
       <span class="group"><label class="muted small" for="withinH">${esc(t("withinH"))}</label>
       <input id="withinH" type="number" min="0.5" step="0.5" value="${esc(S.withinHours)}" style="width:70px;padding:6px;border:1px solid var(--line);border-radius:7px;background:var(--surface-2)"></span></div>`;
-    if (!st.by_contractor.length) return head + `<div class="empty">${esc(t("noStats"))}</div>` + exp;
-    return head + `<h3 class="muted small">${esc(t("byContractor"))}</h3>${statsTable(st.by_contractor, t("contractorL"))}
+    const k = st.kpi || {};
+    const tile = (title, val, sub) => `<div class="kpi"><div class="kpi-v">${esc(val)}</div><div class="kpi-t">${esc(title)}</div><div class="small muted">${esc(sub)}</div></div>`;
+    const kpis = `<div class="kpis">
+      ${tile(t("kpi1"), k.false_alarms_per_hour == null ? t("none") : String(k.false_alarms_per_hour), t("kpi1Sub", { n: k.false_alarm_jobs || 0, h: k.camera_hours || 0 }))}
+      ${tile(t("kpi2", { n: k.notify_minutes || 15 }), L$.pct(k.notify_share), t("kpi2Sub", { a: k.notify_ok || 0, b: k.notify_total || 0 }))}
+      ${tile(t("kpi3"), L$.pct(k.precise_share), t("kpi3Sub", { a: k.precise || 0, b: k.signals_total || 0 }))}</div>`;
+    if (!st.by_contractor.length) return head + kpis + `<div class="empty">${esc(t("noStats"))}</div>` + exp;
+    return head + kpis + `<h3 class="muted small">${esc(t("byContractor"))}</h3>${statsTable(st.by_contractor, t("contractorL"))}
       <h3 class="muted small" style="margin-top:14px">${esc(t("byDistrict"))}</h3>${statsTable(st.by_district, t("district"))}
       <p class="muted small">${esc(t("statsNote"))}</p>${exp}`;
   }
@@ -466,6 +474,7 @@
     if (d.status === "watch") acts.push(["open", t("actDispatch"), "primary"]);
     if (d.status === "watch") acts.push(["cleared_in_time", t("actClean"), "good"]);
     else if (!L$.isClosed(d)) acts.push(["verified", t("actVerify"), "good"]);
+    if (!L$.isClosed(d)) acts.push(["false_alarm", t("actFalse"), ""]);
     if (d.status === "done_reported") acts.push(["reopened", t("actDispute"), "bad"]);
     if (d.status === "verified" && d.opened_at) acts.push(["reopened", t("actReopenVerified"), "bad"]);
 
@@ -473,7 +482,8 @@
       <button class="btn card-back" type="button" id="cardBack">← ${esc(t("back"))}</button>
       <section>
         <h2>${esc(t("alert"))} #${d.id} ${L$.statusBadge(d.status)} ${L$.levelBadge(d.urgency_level, d.status)}
-          ${d.flagged_for_council ? `<span class="chip purple">⚑ ${esc(t("flagCouncil"))}</span>` : ""}</h2>
+          ${d.flagged_for_council ? `<span class="chip purple">⚑ ${esc(t("flagCouncil"))}</span>` : ""}
+          ${d.false_alarm ? `<span class="chip">${esc(t("falseAlarm"))}</span>` : ""}</h2>
         <div class="muted">${esc(L$.place(d.place_type))} · ${esc(t("district"))}: ${esc(d.district || t("none"))} · ${esc(t("contractorL"))}: ${esc(d.contractor_name || t("none"))}</div>
         <div class="muted small">${d.zone_id ? `${esc(t("zone"))}: ${esc(d.zone_id)}` : esc(t("reportOnly"))} · ${esc(t("hz_" + (d.hazard_now || "other")))}</div>
         ${d.status === "watch" ? `<div class="note-box">${esc(t("watchNote"))}</div>` : ""}
@@ -542,7 +552,9 @@
       if (errEl) errEl.textContent = "";
       el.querySelectorAll("[data-act]").forEach((x) => { x.disabled = true; });
       try {
-        S.detail = await api(`/alerts/${S.selected}/status`, { json: { status: b.dataset.act, role: "inspector", actor: ACTOR, note } });
+        const fa = b.dataset.act === "false_alarm";  // KPI 1: the inspector found no snow on site
+        S.detail = await api(`/alerts/${S.selected}/status`, { json: { status: fa ? "verified" : b.dataset.act, false_alarm: fa,
+          role: "inspector", actor: ACTOR, note } });
         S.rendered.panel = null;
         const n = el.querySelector("#actNote"); if (n) n.value = "";
         L$.toast(t("saved"));

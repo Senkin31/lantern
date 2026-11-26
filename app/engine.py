@@ -526,7 +526,7 @@ class Engine:
             return self.alert(alert_id)
 
     def change_status(self, alert_id: int, to: str, role: str, actor: str, note: str = "",
-                      contractor_id: Optional[str] = None):
+                      contractor_id: Optional[str] = None, false_alarm: bool = False):
         if to not in STATUSES:
             raise RuleError(f"unknown status {to}")
         with self.db.lock:
@@ -556,7 +556,10 @@ class Engine:
                 elif to in ("verified", "cleared_in_time"):
                     if st in CLOSED:
                         raise RuleError(f"already closed ({st})")
-                    if st == "watch":  # clean before the deadline: closed, never reached the contractor
+                    if false_alarm:  # no snow on site: the model or the resident was wrong (KPI 1)
+                        self._set_status(alert_id, "cleared_in_time" if st == "watch" else "verified", who,
+                                         note or "false alarm: no snow on site", verified_at=now, false_alarm=1)
+                    elif st == "watch":  # clean before the deadline: closed, never reached the contractor
                         self._set_status(alert_id, "cleared_in_time", who,
                                          note or "clean on site before the deadline", verified_at=now)
                     else:

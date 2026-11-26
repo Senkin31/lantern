@@ -4,7 +4,9 @@ The jury should see one full cycle of the crossing (brief v3): **open → compla
 
 ## Before you go on stage
 
-1. Unzip the mock archive into the repo root (`mock/`). Later, use the Fintraffic frames through Nikita's `camera_worker.py --replay`.
+1. Unzip the mock archive into the repo root (`mock/`). Unzip `lantern_model.zip` **next to** the repo (`..\lantern_model`), not inside it. Later, use the Fintraffic frames through Nikita's `camera_worker.py --replay`.
+1. Start the model service (photo check, port 8001) in its own window: `cd ..\lantern_model` then `py -m uvicorn service:app --host 127.0.0.1 --port 8001`. Its `.env` holds `NEBIUS_API_KEY` (never commit it), and the app's `.env` has `ANALYZE_URL=http://127.0.0.1:8001/analyze`. Check http://127.0.0.1:8001/health.
+   - With the real model the mock photos get real verdicts: the off-topic photo is **rejected**, the first crossing photo goes to **review** (approve it on the Reports tab to show the +1), and the other mock photos (old webcam frames) are judged "cleared" and rejected. To show a complaint live, send a real phone photo through the form or the bot.
 2. Start the app with `app\start.ps1`, or run `python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`.
 3. Open two windows side by side:
    - **left, large:** http://127.0.0.1:8000/inspector

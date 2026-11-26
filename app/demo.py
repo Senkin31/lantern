@@ -139,34 +139,47 @@ def builtin(url: str, speed: float, auto_done: bool, keep_fast: bool = False) ->
                 print(f"{tag} done -> alert {press_done(url, contractor, zone)}  # {note}")
             else:
                 print(f"{tag} >>> NOW: open {url}/contractor?contractor={contractor} and press 'Cleared' on the crossing <<<")
+    finish(url, real0, speed, keep_fast)
+
+
+def finish(url: str, real0: float, speed: float, keep_fast: bool) -> None:
+    """After the replay: freeze the stage (same scenario time, normal speed) unless --keep-fast."""
     if keep_fast:
-        print(f"\nReplay finished in {time.time() - real0:.0f} s. The clock keeps running at x{factor:g} "
+        print(f"\nReplay finished in {time.time() - real0:.0f} s. The clock keeps running fast "
               f"(open alerts turn overdue in ~{24 * speed:.0f} s).")
-    else:  # freeze the stage: same scenario time, normal speed
-        now = call(url, "GET", "/demo/clock")["now"]
-        call(url, "POST", "/demo/clock", {"scenario_start": now, "factor": 1})
-        print(f"\nReplay finished in {time.time() - real0:.0f} s. The demo clock now runs at normal speed from "
-              f"{now} (use --keep-fast to keep it racing, e.g. to show 'overdue').")
+        return
+    now = call(url, "GET", "/demo/clock")["now"]
+    call(url, "POST", "/demo/clock", {"scenario_start": now, "factor": 1})
+    print(f"\nReplay finished in {time.time() - real0:.0f} s. The demo clock now runs at normal speed from "
+          f"{now} (use --keep-fast to keep it racing, e.g. to show 'overdue').")
 
 
 def nikita_v3(url: str, speed: float, auto_done: bool, keep_fast: bool = False) -> None:
     script = MOCK / "send_signals.py"
     print(f"Running {script} (v3 mocks: it sets the demo clock and snowfalls itself)")
+    real0 = time.time()
+    old_clock = call(url, "GET", "/demo/clock").get("real_start")
     proc = subprocess.Popen([sys.executable, "-u", str(script), "--url", url, "--speed", str(speed)],
                             stdout=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
     if auto_done:
         def press():  # wait for 11:30 Riga on the server clock, then press "Cleared" on the crossing
             target = riga("11:30")
             while proc.poll() is None:
-                now = datetime.fromisoformat(call(url, "GET", "/demo/clock")["now"].replace("Z", "+00:00"))
-                if now >= target:
-                    print(f"[11:30 Riga] auto-done -> alert {press_done(url, 'A', CROSSING)}")
-                    return
+                clk = call(url, "GET", "/demo/clock")
+                # the clock left from an earlier run may already be past 11:30: wait for the script's own clock
+                if clk.get("real_start") != old_clock and clk.get("mode") == "demo":
+                    if datetime.fromisoformat(clk["now"].replace("Z", "+00:00")) >= target:
+                        try:
+                            print(f"[11:30 Riga] auto-done -> alert {press_done(url, 'A', CROSSING)}")
+                        except Exception as exc:  # never fail silently: say why the reopen step will be missing
+                            print(f"[11:30 Riga] auto-done FAILED: {exc}")
+                        return
                 time.sleep(0.3)
         threading.Thread(target=press, daemon=True).start()
     for line in proc.stdout:
         print(line.rstrip())
     proc.wait()
+    finish(url, real0, speed, keep_fast)
 
 
 def main() -> None:

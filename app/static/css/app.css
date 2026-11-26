@@ -147,6 +147,10 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .chip.sev-act { border-color: #8e24aa; color: #8e24aa; background: rgba(142, 36, 170, .10); font-weight: 700; }
 .chip.sev-notice { border-color: var(--line); color: var(--muted); }
 .chip.overdue { border-color: #c62828; color: #fff; background: #c62828; font-weight: 700; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 4px 0 14px; }
+.kpi { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--surface-2); }
+.kpi-v { font-size: 26px; font-weight: 700; line-height: 1.1; }
+.kpi-t { font-weight: 600; margin: 2px 0; }
 .sev-box { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .chip.warn { color: #ffc970; } }
 

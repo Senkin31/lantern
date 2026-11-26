@@ -159,7 +159,7 @@ class Database:
                   ("alerts", "deadline_at", "TEXT"), ("alerts", "snowfall_id", "INTEGER"),
                   ("alerts", "fix_due_at", "TEXT"), ("alerts", "severity", "TEXT"),
                   ("alerts", "severity_suggested", "TEXT"), ("alerts", "severity_manual", "TEXT"),
-                  ("alerts", "severity_reason", "TEXT"))
+                  ("alerts", "severity_reason", "TEXT"), ("alerts", "false_alarm", "INTEGER DEFAULT 0"))
 
     def _migrate(self, conn) -> None:
         for table, col, typ in self.MIGRATIONS:

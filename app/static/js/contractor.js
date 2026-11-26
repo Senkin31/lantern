@@ -158,7 +158,9 @@
       else {
         const c = me();
         const cams = (S.meta.cameras || []).filter((x) => !c || (c.districts || []).includes(x.district)).map((x) => [x.lat, x.lon]);
-        if (cams.length) S.map.fitBounds(cams, { padding: [60, 60], maxZoom: 16 });
+        const riga = L.latLng(56.9496, 24.1052);  // prefer Riga over the Finnish demo cameras
+        const home = cams.filter((p) => riga.distanceTo(L.latLng(p)) < 50000);
+        if (cams.length) S.map.fitBounds(home.length ? home : cams, { padding: [60, 60], maxZoom: 16 });
       }
       S.fitted = true;
     }

@@ -327,6 +327,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         actor: str = ""
         contractor: Optional[str] = None
         note: str = Field("", max_length=500)
+        false_alarm: bool = Field(False, description="inspector only, with status verified: no snow on site (KPI 1)")
 
     @app.post("/alerts/{alert_id}/status", tags=["alerts"])
     def change_status(alert_id: int, body: StatusChange):
@@ -335,12 +336,15 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
             raise HTTPException(422, "status or severity is required")
         if body.severity is not None and body.role != "inspector":
             raise HTTPException(403, "only the inspector changes the severity")
+        if body.false_alarm and (body.role != "inspector" or body.status not in ("verified", "cleared_in_time")):
+            raise HTTPException(403, "only the inspector closes an alert as a false alarm (status verified)")
         try:
             a = None
             if body.severity is not None:
                 a = engine.set_severity(alert_id, body.severity, body.actor, body.note if body.status is None else "")
             if body.status is not None:
-                a = engine.change_status(alert_id, body.status, body.role, body.actor, body.note, body.contractor)
+                a = engine.change_status(alert_id, body.status, body.role, body.actor, body.note, body.contractor,
+                                         false_alarm=body.false_alarm)
         except KeyError:
             raise HTTPException(404, "unknown alert")
         except RuleError as exc:

@@ -299,6 +299,27 @@ def test_inactive_camera_is_switched_off(make_client, tmp_path, monkeypatch):
     assert day.signal("on:sidewalk", "snow", 0.9, 0.9) is not None
 
 
+def test_kpi_block_and_false_alarm(make_client, mock_dir):
+    """KPI 1 = jobs closed as false alarm per camera hour; KPI 2 = notified <= 15 min; KPI 3 = exact location."""
+    day = Day(*make_client())
+    c = day.client
+    day.clock.set(riga("09:00"))
+    c.post("/snowfalls", json={"start": utc(riga("01:00")), "end": utc(riga("03:00"))})   # deadline 08:00
+    sq = day.signal(SQUARE, "snow", 0.4, 0.8)            # open at 09:00, notified at once
+    day.at("11:00")
+    day.signal(SIDEWALK, "clear", 0.0, 0.9)              # mock_cam_2 worked 09:00-11:00 -> 2 camera hours
+    assert c.post(f"/alerts/{sq}/status", json={"status": "verified", "false_alarm": True,
+                                               "role": "contractor", "contractor": "B"}).status_code == 403
+    r = c.post(f"/alerts/{sq}/status", json={"status": "verified", "false_alarm": True, "role": "inspector"})
+    assert r.status_code == 200 and r.json()["status"] == "verified" and r.json()["false_alarm"] is True
+    st = c.get("/stats/response").json()
+    k = st["kpi"]
+    assert k["false_alarm_jobs"] == 1 and k["camera_hours"] == 2.0 and k["false_alarms_per_hour"] == 0.5
+    assert k["notify_total"] == 0                        # a false alarm is not the contractor's job
+    assert k["precise_share"] == 1.0 and k["signals_total"] == 2
+    assert all(row["opened"] == 0 for row in st["by_contractor"]) or not st["by_contractor"]
+
+
 def test_demo_clock_runs_fast(make_client):
     import time
     client, engine, clock, _ = make_client()

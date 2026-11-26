@@ -129,6 +129,7 @@ class Views:
                 "severity_suggested": a["severity_suggested"],
                 "severity_manual": a["severity_manual"],
                 "severity_reason": a["severity_reason"],
+                "false_alarm": bool(a["false_alarm"]),
                 "snowfall_id": a["snowfall_id"],
                 "inspector_flags": json.loads(a["inspector_flags"] or "[]"),
                 "notify_seconds": self.notify_seconds(a),
@@ -247,7 +248,7 @@ class Views:
         within = within_hours or self.e.cfg.fix_hours
         kpi_seconds = self.e.cfg.notify_kpi_minutes * 60.0
         groups: dict = {}
-        for a in self.db.q("SELECT * FROM alerts WHERE notified_at IS NOT NULL"):
+        for a in self.db.q("SELECT * FROM alerts WHERE notified_at IS NOT NULL AND COALESCE(false_alarm, 0) = 0"):
             for key in (("contractor", a["contractor_id"] or "-"), ("district", a["district"] or "-")):
                 g = groups.setdefault(key, {"opened": 0, "verified": 0, "active": 0, "responses": [],
                                             "reopened": 0, "reopened_alerts": 0, "notify": [], "overdue": 0,
@@ -292,7 +293,34 @@ class Views:
             return out
 
         return {"within_hours": within, "notify_kpi_minutes": self.e.cfg.notify_kpi_minutes,
-                "by_contractor": summarize("contractor"), "by_district": summarize("district")}
+                "kpi": self.kpi(), "by_contractor": summarize("contractor"), "by_district": summarize("district")}
+
+    def kpi(self) -> dict:
+        """The three KPIs from the challenge, for the inspector screen.
+        KPI 1: jobs the inspector closed as a false alarm / hours of camera work (first to last signal per camera).
+        KPI 2: share of jobs that reached the contractor <= 15 min after max(snow seen, deadline).
+        KPI 3: share of signals with an exact location (cameras always; resident reports with a map point)."""
+        hours = 0.0
+        for c in self.db.q("SELECT MIN(timestamp) AS a, MAX(timestamp) AS b FROM signals GROUP BY camera_id"):
+            hours += (_seconds(c["a"], c["b"]) or 0) / 3600.0
+        false_jobs = self.db.one("SELECT COUNT(*) AS n FROM alerts WHERE false_alarm = 1 "
+                                 "AND notified_at IS NOT NULL")["n"]
+        false_all = self.db.one("SELECT COUNT(*) AS n FROM alerts WHERE false_alarm = 1")["n"]
+        kpi_s = self.e.cfg.notify_kpi_minutes * 60.0
+        notify = [n for n in (self.notify_seconds(a) for a in self.db.q(
+            "SELECT * FROM alerts WHERE notified_at IS NOT NULL AND COALESCE(false_alarm, 0) = 0")) if n is not None]
+        sig = self.db.one("SELECT COUNT(*) AS n, SUM(lat IS NOT NULL AND lon IS NOT NULL) AS p FROM signals")
+        rep = self.db.one("SELECT COUNT(*) AS n, SUM(lat IS NOT NULL AND lon IS NOT NULL) AS p FROM reports "
+                          "WHERE relevant != 'reject'")
+        total, precise = sig["n"] + rep["n"], (sig["p"] or 0) + (rep["p"] or 0)
+        return {
+            "false_alarms_per_hour": round(false_jobs / hours, 3) if hours else None,
+            "false_alarm_jobs": false_jobs, "false_alarms_all": false_all, "camera_hours": round(hours, 1),
+            "notify_share": (sum(1 for n in notify if n <= kpi_s) / len(notify)) if notify else None,
+            "notify_ok": sum(1 for n in notify if n <= kpi_s), "notify_total": len(notify),
+            "notify_minutes": self.e.cfg.notify_kpi_minutes,
+            "precise_share": (precise / total) if total else None, "precise": precise, "signals_total": total,
+        }
 
     # ------------------------------------------------------------------ evidence package (inspector only)
     def evidence(self, a) -> dict:

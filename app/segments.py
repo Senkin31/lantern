@@ -38,7 +38,10 @@ class Sidewalks:
 
     def __init__(self, features: list):
         self.blocks = []
-        lats = [c[1] for f in features for c in f["geometry"]["coordinates"]] or [56.95]
+        self.areas = []  # squares / pedestrian areas: an alert inside one belongs to the whole square
+        self.area_grid = defaultdict(list)
+        lats = [c[1] for f in features if f["geometry"]["type"] == "LineString"
+                for c in f["geometry"]["coordinates"]] or [56.95]
         self.lat0 = sum(lats) / len(lats)
         self.kx = 111_320 * math.cos(math.radians(self.lat0))
         self.ky = 111_320
@@ -46,6 +49,9 @@ class Sidewalks:
         self.at = defaultdict(list)  # block end point -> blocks that end there (the junctions)
         for f in features:
             coords = f["geometry"]["coordinates"]
+            if f["geometry"]["type"] == "Polygon":
+                self._add_area(f)
+                continue
             if f["geometry"]["type"] != "LineString" or len(coords) < 2:
                 continue
             p = f.get("properties", {})
@@ -64,6 +70,37 @@ class Sidewalks:
                 self.grid[c].append(idx)
             for end in (coords[0], coords[-1]):
                 self.at[(round(end[1], 6), round(end[0], 6))].append(idx)
+
+    def _add_area(self, f: dict) -> None:
+        ring = f["geometry"]["coordinates"][0]
+        if len(ring) < 4:
+            return
+        p = f.get("properties", {})
+        xy = [self.xy(lat, lon) for lon, lat in ring]
+        area = abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(xy, xy[1:]))) / 2
+        idx = len(self.areas)
+        self.areas.append({"id": p.get("id") or f"a{idx}", "name": p.get("name"), "kind": "square",
+                           "latlon": [[lat, lon] for lon, lat in ring], "xy": xy, "area_m2": area})
+        xs, ys = [x for x, _ in xy], [y for _, y in xy]
+        for gx in range(int(min(xs) // CELL_M), int(max(xs) // CELL_M) + 1):
+            for gy in range(int(min(ys) // CELL_M), int(max(ys) // CELL_M) + 1):
+                self.area_grid[(gx, gy)].append(idx)
+
+    @staticmethod
+    def _inside(p, ring) -> bool:
+        x, y = p
+        inside = False
+        for (x1, y1), (x2, y2) in zip(ring, ring[1:]):
+            if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / (y2 - y1) + x1:
+                inside = not inside
+        return inside
+
+    def area_at(self, lat: float, lon: float) -> Optional[dict]:
+        """The square the point is in (the smallest one, if squares overlap)."""
+        p = self.xy(lat, lon)
+        hits = [self.areas[i] for i in self.area_grid.get((int(p[0] // CELL_M), int(p[1] // CELL_M)), ())
+                if self._inside(p, self.areas[i]["xy"])]
+        return min(hits, key=lambda a: a["area_m2"]) if hits else None
 
     def extend(self, b: dict, min_m: float = MIN_SECTION_M):
         """Grow a short block through its junctions along the same street (same name, or same kind when
@@ -121,6 +158,9 @@ class Sidewalks:
         return math.hypot(px - ax - t * dx, py - ay - t * dy)
 
     def nearest(self, lat: float, lon: float, max_m: float = SNAP_M) -> Optional[dict]:
+        sq = self.area_at(lat, lon)
+        if sq:
+            return sq  # inside a square: the place is the whole square, not one line through it
         p = self.xy(lat, lon)
         cx, cy = int(p[0] // CELL_M), int(p[1] // CELL_M)
         best, best_side = (None, float("inf")), (None, float("inf"))
@@ -173,8 +213,13 @@ def sections(alerts: list, devices: dict, sidewalks: Optional[Sidewalks]) -> lis
             s = _summary(group, devices)
             if _lit(s):
                 b = blocks[bid]
+                if b["kind"] == "square":
+                    out.append({"id": bid, "name": b["name"], "kind": "square", "shape": "area",
+                                "area_m2": round(b["area_m2"]), "length_m": None, "block_m": None,
+                                "coords": b["latlon"], "source": "osm", **s})
+                    continue
                 coords, length = sidewalks.extend(b)
-                out.append({"id": bid, "name": b["name"], "kind": b["kind"], "length_m": round(length),
+                out.append({"id": bid, "name": b["name"], "kind": b["kind"], "shape": "line", "length_m": round(length),
                             "block_m": round(b["length_m"]), "coords": coords, "source": "osm", **s})
         return out
     # fallback without street data: join alerts that lie within CLUSTER_M of each other
@@ -212,5 +257,6 @@ def sections(alerts: list, devices: dict, sidewalks: Optional[Sidewalks]) -> lis
         coords = [[alerts[i]["lat"], alerts[i]["lon"]] for i in members]
         length = sum(math.dist(pts[members[k]], pts[members[k + 1]]) for k in range(len(members) - 1))
         out.append({"id": "c" + "-".join(str(alerts[i]["id"]) for i in members), "name": None, "kind": "cluster",
+                    "shape": "line",
                     "length_m": round(length), "coords": coords, "source": "cluster", **s})
     return out

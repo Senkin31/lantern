@@ -207,10 +207,14 @@
     S.sectionLayer.clearLayers();
     (S.sections || []).forEach((s) => {
       const col = L$.alertColor({ status: s.status, urgency_level: s.urgency_level });
-      const line = L.polyline(s.coords, { color: col, weight: 9, opacity: 0.7, lineCap: "round",
-        dashArray: s.status === "watch" ? "8 8" : null }).addTo(S.sectionLayer);
+      const dash = s.status === "watch" ? "8 8" : null;
+      // a square is one place: paint the whole area; a street: a thick line along the block
+      const line = s.shape === "area"
+        ? L.polygon(s.coords, { color: col, weight: 3, fillColor: col, fillOpacity: 0.35, dashArray: dash }).addTo(S.sectionLayer)
+        : L.polyline(s.coords, { color: col, weight: 9, opacity: 0.7, lineCap: "round", dashArray: dash }).addTo(S.sectionLayer);
       const who = [s.camera ? "📷" : "", s.residents ? `${s.residents} 👤` : ""].filter(Boolean).join(" · ");
-      line.bindTooltip(`${esc(s.name || t("sectionNoName"))} · ${s.length_m} m<br>${esc(t("lv_" + s.urgency_level))} · ${who} · #${s.alert_ids.join(", #")}`);
+      const size = s.shape === "area" ? `${t("squareL")} · ${Math.round(s.area_m2).toLocaleString()} m²` : `${s.length_m} m`;
+      line.bindTooltip(`${esc(s.name || t("sectionNoName"))} · ${esc(size)}<br>${esc(t("lv_" + s.urgency_level))} · ${who} · #${s.alert_ids.join(", #")}`);
       line.on("click", () => {
         S.map.fitBounds(line.getBounds(), { padding: [80, 80], maxZoom: 18 });
         select(s.alert_ids[0], false);
@@ -236,7 +240,9 @@
     if (!S.map) return;
     const detail = S.map.getZoom() >= DETAIL_ZOOM;
     show(S.camGroup, detail);
-    if (S.sectionLayer) S.sectionLayer.eachLayer((l) => l.setStyle(detail ? { weight: 5, opacity: 0.35 } : { weight: 10, opacity: 0.85 }));
+    if (S.sectionLayer) S.sectionLayer.eachLayer((l) => l.setStyle(l instanceof L.Polygon
+      ? (detail ? { weight: 2, opacity: 0.5, fillOpacity: 0.12 } : { weight: 3, opacity: 0.9, fillOpacity: 0.35 })
+      : (detail ? { weight: 5, opacity: 0.35 } : { weight: 10, opacity: 0.85 })));
     const onLine = new Set((S.sections || []).flatMap((s) => s.alert_ids));
     const loose = [];
     S.alerts.forEach((a) => {

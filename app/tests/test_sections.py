@@ -107,3 +107,34 @@ def test_short_section_grows_along_the_same_street():
     s = sections([alert(1, 56.95003, 24.1002, zone="cam:z")], {}, w)
     assert s[0]["block_m"] < 40 and s[0]["length_m"] >= 80                  # painted as a street, not a dot
     assert all(p[0] == 56.95 for p in s[0]["coords"])                        # it went on along A iela
+
+
+# a ~65 x 55 m square with the street running past its south edge
+SQUARE = [[24.1100, 56.9502], [24.1111, 56.9502], [24.1111, 56.9507], [24.1100, 56.9507], [24.1100, 56.9502]]
+
+
+def test_alert_inside_a_square_paints_the_whole_square():
+    feats = [{"type": "Feature", "properties": {"id": "s1", "name": "Test iela", "kind": "street"},
+              "geometry": {"type": "LineString", "coordinates": STREET}},
+             {"type": "Feature", "properties": {"id": "w9", "name": "Test laukums", "kind": "square"},
+              "geometry": {"type": "Polygon", "coordinates": [SQUARE]}}]
+    w = Sidewalks(feats)
+    assert w.nearest(56.95045, 24.1105)["id"] == "w9"        # in the middle of the square
+    assert w.nearest(56.95001, 24.1105)["id"] == "s1"        # on the street, outside it
+    s = sections([alert(1, 56.95045, 24.1105, zone="cam:sq", level="high")], {}, w)
+    assert len(s) == 1 and s[0]["shape"] == "area" and s[0]["kind"] == "square"
+    assert s[0]["name"] == "Test laukums" and 3000 <= s[0]["area_m2"] <= 4500
+    assert s[0]["coords"][0] == [56.9502, 24.1100]          # ring in lat, lon for Leaflet
+    line = sections([alert(2, 56.95001, 24.1120, zone="cam:st")], {}, w)
+    assert line[0]["shape"] == "line"
+
+
+def test_square_outlines_leave_the_lines_and_unnamed_squares_get_a_name():
+    from app.osm_sidewalks import with_squares
+    lines = [_f("w5-1", [[24.1101, 56.9503], [24.1105, 56.9503]], name="Iekšā iela"),   # inside the square
+             _f("w7", SQUARE[:2], name="Malas iela")]                                     # the square's own outline
+    sq = {"type": "Feature", "properties": {"id": "w7", "name": None, "kind": "square"},
+          "geometry": {"type": "Polygon", "coordinates": [SQUARE]}}
+    out = with_squares(lines, [sq], {7})
+    assert [f["properties"]["id"] for f in out] == ["w5-1", "w7"]
+    assert out[1]["properties"]["name"] == "Iekšā iela"

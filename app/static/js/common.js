@@ -79,7 +79,7 @@
       kpi2: "Reached the contractor in ≤ {n} min", kpi2Sub: "{a} of {b} jobs",
       kpi3: "Signals with an exact location", kpi3Sub: "{a} of {b} (cameras always, reports with a map point)",
       actFalse: "False alarm (no snow)", falseAlarm: "False alarm",
-      sectionLegend: "Street section (camera or 2+ residents)", sectionNoName: "Unnamed street",
+      sectionLegend: "Street section or square (camera or 2+ residents)", sectionNoName: "Unnamed street", squareL: "square",
       bubbleLegend: "Several alerts close together", bubbleTip: "{n} alerts here: click to zoom in",
       exportGeo: "Export GeoJSON", exportCsv: "Export CSV", noStats: "No alerts have been sent to contractors yet.",
       // contractor
@@ -161,7 +161,7 @@
       kpi2: "Darbuzņēmējs saņēma ≤ {n} min", kpi2Sub: "{a} no {b} darbiem",
       kpi3: "Signāli ar precīzu vietu", kpi3Sub: "{a} no {b} (kameras vienmēr, ziņojumi ar punktu kartē)",
       actFalse: "Viltus trauksme (nav sniega)", falseAlarm: "Viltus trauksme",
-      sectionLegend: "Ielas posms (kamera vai 2+ iedzīvotāji)", sectionNoName: "Iela bez nosaukuma",
+      sectionLegend: "Ielas posms vai laukums (kamera vai 2+ iedzīvotāji)", sectionNoName: "Iela bez nosaukuma", squareL: "laukums",
       bubbleLegend: "Vairāki brīdinājumi tuvu", bubbleTip: "Šeit {n} brīdinājumi: klikšķini, lai pietuvinātu",
       exportGeo: "Eksportēt GeoJSON", exportCsv: "Eksportēt CSV", noStats: "Darbuzņēmējiem vēl nekas nav nosūtīts.",
       myJobs: "Mani darbi", listView: "Saraksts", mapView: "Karte", toDo: "Jādara", waiting: "Gaida pārbaudi", doneToday: "Pārbaudīti",

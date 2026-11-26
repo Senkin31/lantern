@@ -295,3 +295,6 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .completed summary { cursor: pointer; font-weight: 650; padding: 12px 0; min-height: 44px; }
 .completed .job { opacity: .85; }
 #cmap { height: 62vh; min-height: 320px; border-radius: 14px; border: 1px solid var(--line); }
+
+/* clicking a section or square must not leave a black focus box around it */
+.leaflet-container path.leaflet-interactive:focus:not(:focus-visible) { outline: none; }

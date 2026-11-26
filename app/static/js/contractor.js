@@ -141,17 +141,15 @@
       let l = S.layers.get(a.id);
       if (!l) {
         l = {};
-        if (a.polygon) l.poly = L.polygon(L$.toLatLngs(a.polygon), { color: col, weight: 2, fillOpacity: .35 }).addTo(S.map);
         l.marker = L.circleMarker([a.lat, a.lon], style).addTo(S.map);
         l.marker.on("click", () => { S.view = "list"; S.lastHTML = ""; render(); const j = document.getElementById("job-" + a.id); if (j) j.scrollIntoView({ behavior: "smooth" }); });
         S.layers.set(a.id, l);
       } else {
         l.marker.setStyle(style); l.marker.setRadius(style.radius);
-        if (l.poly) l.poly.setStyle({ color: col });
       }
       l.marker.bindTooltip(`#${a.id} · ${esc(L$.place(a.place_type))} · ${esc(t("st_" + a.status))}`);
     });
-    S.layers.forEach((l, id) => { if (!seen.has(id)) { if (l.poly) l.poly.remove(); l.marker.remove(); S.layers.delete(id); } });
+    S.layers.forEach((l, id) => { if (!seen.has(id)) { l.marker.remove(); S.layers.delete(id); } });
     if (!S.fitted) {
       const pts = S.alerts.map((a) => [a.lat, a.lon]);
       if (pts.length) S.map.fitBounds(pts, { padding: [40, 40], maxZoom: 17 });

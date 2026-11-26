@@ -31,7 +31,7 @@ Start the replay: `python -m app.demo`. One scenario hour takes 6 s. The script 
 | 42 s | 14:00 | Snowfall 2 sets a new deadline of 22:00. The crossing is clean: **verified, response 5 h**. | A clean frame closes the alert, not the button. |
 | 45–51 s | 14:30–15:30 | The sidewalk gets snow (**watch**, invisible to the contractor) and is clean by 15:30: **cleared in time**. | Before the deadline nobody is alarmed. |
 
-While the crossing and the square are open, point at the map: zoomed out, the inspector sees only **street sections** (coloured lines) and count bubbles, not a carpet of dots. Click a line to zoom into the block: the single dots and the camera zone appear. Say: "Two or more people on one block, or a camera, and the council sees the whole street section, not a dot."
+While the crossing and the square are open, point at the map: zoomed out, the inspector sees only **street sections** (coloured lines) and count bubbles, not a carpet of dots. Click a line to zoom into the block: the single dots appear on it. Say: "Two or more people on one block, or a camera, and the council sees the whole street section, not a dot."
 
 Then open the crossing card and click **📄 Evidence package**: map, deadline and the snowfall it came from, the first frame with snow after the deadline, the last snowy frame and the clean frame (each with Riga time), resident photos and the status history. **Print → Save as PDF**. Say: "The inspector gets the proof without driving out."
 

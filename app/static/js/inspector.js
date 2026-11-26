@@ -143,15 +143,12 @@
   function drawCameraZones() {
     const group = L.layerGroup().addTo(S.map);
     S.camGroup = group;
-    S.zoneLines = new Map();  // zone_id -> grey outline, hidden when a square already shows that place
     const bounds = [];
     (S.meta.cameras || []).forEach((cam) => {
       bounds.push([cam.lat, cam.lon]);
       (cam.zones || []).forEach((z) => {
-        if (!z.map_polygon) return;
-        const ll = L$.toLatLngs(z.map_polygon);
-        ll.forEach((p) => bounds.push(p));
-        S.zoneLines.set(z.zone_id, L.polygon(ll, { color: "#7a8596", weight: 1, dashArray: "3 4", fill: false, interactive: false }).addTo(group));
+        // zone rectangles are not drawn: a camera alert is shown by its street section or square and a dot
+        if (z.map_polygon) L$.toLatLngs(z.map_polygon).forEach((p) => bounds.push(p));
       });
       L.circleMarker([cam.lat, cam.lon], { radius: 3, color: "#7a8596", weight: 1, fillOpacity: .6, interactive: true })
         .bindTooltip(esc(cam.name || cam.camera_id)).addTo(group);
@@ -182,7 +179,7 @@
   }
 
   function clearAlertLayers() {
-    S.layers.forEach((l) => { if (l.poly) l.poly.remove(); l.marker.remove(); });
+    S.layers.forEach((l) => l.marker.remove());
     S.layers.clear();
   }
 
@@ -191,8 +188,6 @@
     const sel = S.selected === a.id;
     const verified = L$.isClosed(a);
     return {
-      poly: { color: a.status === "reopened" ? L$.COLORS.reopened : col, weight: sel ? 4 : 2, fillColor: col,
-        fillOpacity: verified ? 0.12 : 0.38, opacity: verified ? 0.5 : 0.95, dashArray: a.status === "watch" ? "5 4" : null },
       marker: { radius: sel ? 11 : (verified ? 5 : 8), color: a.status === "reopened" ? L$.COLORS.reopened : "#ffffff",
         weight: a.status === "reopened" ? 4 : 2, fillColor: col, fillOpacity: verified ? 0.55 : 0.95,
         dashArray: a.status === "watch" ? "3 3" : null },
@@ -241,22 +236,18 @@
     if (!S.map) return;
     const detail = S.map.getZoom() >= DETAIL_ZOOM;
     show(S.camGroup, detail);
-    // a square stays strong up close: it replaces the camera rectangle, only the dot sits on top of it
+    // the section is the shape of the problem at every zoom (there are no camera rectangles); up close it is
+    // a little thinner so the dots on it stay readable
     if (S.sectionLayer) S.sectionLayer.eachLayer((l) => l.setStyle(l instanceof L.Polygon
       ? (detail ? { weight: 3, opacity: 0.9, fillOpacity: 0.3 } : { weight: 3, opacity: 0.9, fillOpacity: 0.35 })
-      : (detail ? { weight: 5, opacity: 0.35 } : { weight: 10, opacity: 0.85 })));
+      : (detail ? { weight: 8, opacity: 0.7 } : { weight: 10, opacity: 0.85 })));
     const onLine = new Set((S.sections || []).flatMap((s) => s.alert_ids));
-    // alerts painted as a whole square: their camera rectangle would only cover the square's shape
-    const inSquare = new Set((S.sections || []).filter((s) => s.shape === "area").flatMap((s) => s.alert_ids));
-    const squareZones = new Set(S.alerts.filter((a) => inSquare.has(a.id) && a.zone_id).map((a) => a.zone_id));
-    if (S.zoneLines) S.zoneLines.forEach((line, zid) => line.setStyle({ opacity: squareZones.has(zid) ? 0 : 1 }));
     const loose = [];
     S.alerts.forEach((a) => {
       const l = S.layers.get(a.id);
       if (!l) return;
       const visible = detail || a.id === S.selected;
       show(l.marker, visible);
-      show(l.poly, visible && !inSquare.has(a.id));
       if (!visible && !L$.isClosed(a) && !onLine.has(a.id)) loose.push(a);
     });
     if (!S.bubbleLayer) S.bubbleLayer = L.layerGroup().addTo(S.map);
@@ -298,16 +289,11 @@
       const tip = `#${a.id} · ${t("st_" + a.status)} · ${t("lv_" + a.urgency_level)} (${a.urgency_score})${a.opened_at ? " · " + t("sev_" + a.severity) : ""}${a.overdue ? " · " + t("overdue") : ""}<br>${esc(L$.place(a.place_type))}${a.report_count ? ` · ${a.report_count} 👤` : ""}`;
       if (!l) {
         l = {};
-        if (a.polygon) {
-          l.poly = L.polygon(L$.toLatLngs(a.polygon), st.poly).addTo(S.map);
-          l.poly.on("click", () => select(a.id));
-        }
         l.marker = L.circleMarker([a.lat, a.lon], st.marker).addTo(S.map);
         l.marker.on("click", () => select(a.id));
         l.marker.bindTooltip(tip);
         S.layers.set(a.id, l);
       } else {
-        if (l.poly) l.poly.setStyle(st.poly);
         l.marker.setStyle(st.marker);
         l.marker.setRadius(st.marker.radius);
         l.marker.setTooltipContent(tip);
@@ -315,7 +301,7 @@
       if (!L$.isClosed(a) && S.map.hasLayer(l.marker)) l.marker.bringToFront();
       bounds.push([a.lat, a.lon]);
     });
-    S.layers.forEach((l, id) => { if (!seen.has(id)) { if (l.poly) l.poly.remove(); l.marker.remove(); S.layers.delete(id); } });
+    S.layers.forEach((l, id) => { if (!seen.has(id)) { l.marker.remove(); S.layers.delete(id); } });
     if (!S.fitted && bounds.length) {
       S.fitted = true;
       S.map.fitBounds(L.latLngBounds(bounds), { padding: [50, 50], maxZoom: 16 });  // frame the alerts, not every camera

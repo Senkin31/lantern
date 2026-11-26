@@ -35,6 +35,7 @@ def test_camera_lights_a_block_one_resident_does_not():
     cam = sections([alert(2, 56.95005, 24.1120, zone="cam:sidewalk", level="high")], {}, w)
     assert len(cam) == 1 and cam[0]["camera"] and cam[0]["name"] == "Test iela" and cam[0]["urgency_level"] == "high"
     assert 190 <= cam[0]["length_m"] <= 210
+    assert cam[0]["points"] == {2: [56.95, 24.112]}         # the dot is drawn on the street, 5 m south
 
 
 def test_two_residents_on_one_block_light_it_in_the_worst_colour():
@@ -78,6 +79,10 @@ def test_sections_endpoint(make_client, tmp_path, monkeypatch, mock_dir):
     body = client.get("/sections").json()
     assert body["source"] == "osm" and body["sections"][0]["alert_ids"] == [al]
     assert body["sections"][0]["name"] == "Demo iela"
+    # the camera alert's dot is drawn on the sidewalk line, for the inspector and the contractor alike
+    dot = client.get(f"/alerts/{al}", params={"role": "contractor", "contractor": "A"}).json()["map_point"]
+    assert abs(dot[0] - 56.94980) < 1e-6 and 24.10495 <= dot[1] <= 24.10545
+    assert body["sections"][0]["points"][str(al)] == dot
     assert client.get("/sections", params={"role": "contractor"}).status_code == 403
 
 

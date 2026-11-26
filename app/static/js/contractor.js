@@ -141,7 +141,7 @@
       let l = S.layers.get(a.id);
       if (!l) {
         l = {};
-        l.marker = L.circleMarker([a.lat, a.lon], style).addTo(S.map);
+        l.marker = L.circleMarker(a.map_point || [a.lat, a.lon], style).addTo(S.map);  // camera jobs sit on the street
         l.marker.on("click", () => { S.view = "list"; S.lastHTML = ""; render(); const j = document.getElementById("job-" + a.id); if (j) j.scrollIntoView({ behavior: "smooth" }); });
         S.layers.set(a.id, l);
       } else {
@@ -151,7 +151,7 @@
     });
     S.layers.forEach((l, id) => { if (!seen.has(id)) { l.marker.remove(); S.layers.delete(id); } });
     if (!S.fitted) {
-      const pts = S.alerts.map((a) => [a.lat, a.lon]);
+      const pts = S.alerts.map((a) => a.map_point || [a.lat, a.lon]);
       if (pts.length) S.map.fitBounds(pts, { padding: [40, 40], maxZoom: 17 });
       else {
         const c = me();

@@ -157,6 +157,20 @@ class Sidewalks:
         t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / L2))
         return math.hypot(px - ax - t * dx, py - ay - t * dy)
 
+    def snap(self, b: dict, lat: float, lon: float) -> list:
+        """The point on block b closest to (lat, lon): where the alert's dot is drawn on the street."""
+        p = self.xy(lat, lon)
+        best, bx, by = None, p[0], p[1]
+        for (ax, ay), (cx, cy) in zip(b["xy"], b["xy"][1:]):
+            dx, dy = cx - ax, cy - ay
+            L2 = dx * dx + dy * dy
+            t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((p[0] - ax) * dx + (p[1] - ay) * dy) / L2))
+            qx, qy = ax + t * dx, ay + t * dy
+            d = math.hypot(p[0] - qx, p[1] - qy)
+            if best is None or d < best:
+                best, bx, by = d, qx, qy
+        return [round(by / self.ky + self.lat0, 7), round(bx / self.kx + 24.0, 7)]
+
     def nearest(self, lat: float, lon: float, max_m: float = SNAP_M) -> Optional[dict]:
         sq = self.area_at(lat, lon)
         if sq:
@@ -219,8 +233,10 @@ def sections(alerts: list, devices: dict, sidewalks: Optional[Sidewalks]) -> lis
                                 "coords": b["latlon"], "source": "osm", **s})
                     continue
                 coords, length = sidewalks.extend(b)
+                # each alert's dot sits on the street, not where the camera zone's centre fell (often a roof)
+                points = {a["id"]: sidewalks.snap(b, a["lat"], a["lon"]) for a in group}
                 out.append({"id": bid, "name": b["name"], "kind": b["kind"], "shape": "line", "length_m": round(length),
-                            "block_m": round(b["length_m"]), "coords": coords, "source": "osm", **s})
+                            "block_m": round(b["length_m"]), "coords": coords, "points": points, "source": "osm", **s})
         return out
     # fallback without street data: join alerts that lie within CLUSTER_M of each other
     parent = list(range(len(alerts)))

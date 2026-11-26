@@ -280,6 +280,9 @@
   function updateMap() {
     if (!S.map) return;
     updateSections();
+    // an alert on a street section is drawn on that street (the backend snaps it), not on a roof
+    const dotAt = new Map();
+    (S.sections || []).forEach((s) => Object.entries(s.points || {}).forEach(([id, p]) => dotAt.set(Number(id), p)));
     const seen = new Set();
     const bounds = [];
     S.alerts.forEach((a) => {
@@ -289,13 +292,14 @@
       const tip = `#${a.id} · ${t("st_" + a.status)} · ${t("lv_" + a.urgency_level)} (${a.urgency_score})${a.opened_at ? " · " + t("sev_" + a.severity) : ""}${a.overdue ? " · " + t("overdue") : ""}<br>${esc(L$.place(a.place_type))}${a.report_count ? ` · ${a.report_count} 👤` : ""}`;
       if (!l) {
         l = {};
-        l.marker = L.circleMarker([a.lat, a.lon], st.marker).addTo(S.map);
+        l.marker = L.circleMarker(dotAt.get(a.id) || a.map_point || [a.lat, a.lon], st.marker).addTo(S.map);
         l.marker.on("click", () => select(a.id));
         l.marker.bindTooltip(tip);
         S.layers.set(a.id, l);
       } else {
         l.marker.setStyle(st.marker);
         l.marker.setRadius(st.marker.radius);
+        l.marker.setLatLng(dotAt.get(a.id) || a.map_point || [a.lat, a.lon]);
         l.marker.setTooltipContent(tip);
       }
       if (!L$.isClosed(a) && S.map.hasLayer(l.marker)) l.marker.bringToFront();

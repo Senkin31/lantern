@@ -31,6 +31,7 @@ class Views:
     def __init__(self, engine: Engine):
         self.e = engine
         self.sidewalks = None  # app.segments.Sidewalks, set by build_app
+        self._points = {}      # (lat, lon) -> camera alert's dot on the street (or None)
         self.db = engine.db
 
     # ------------------------------------------------------------------ alerts
@@ -71,6 +72,18 @@ class Views:
             return None
         return max(0.0, (parse_ts(a["notified_at"]) - max(ref)).total_seconds())
 
+    def map_point(self, a) -> Optional[list]:
+        """Where a camera alert's dot goes: on the nearest street block, not the zone's centre (often a roof).
+        None for reports (their own spot is exact), inside a square, or with no street nearby."""
+        if not a["zone_id"] or self.sidewalks is None:
+            return None
+        key = (a["lat"], a["lon"])
+        if key not in self._points:
+            from .segments import SNAP_CAMERA_M
+            b = self.sidewalks.nearest(a["lat"], a["lon"], SNAP_CAMERA_M)
+            self._points[key] = self.sidewalks.snap(b, *key) if b and b["kind"] != "square" else None
+        return self._points[key]
+
     def alert(self, a, role: str, detail: bool = False) -> dict:
         low = self.e.cfg.low_confidence
         sigs = self.db.q("SELECT * FROM signals WHERE alert_id = ? ORDER BY timestamp, id", (a["id"],))
@@ -95,6 +108,7 @@ class Views:
             "contractor_name": self.e.registry.contractor_name(a["contractor_id"]),
             "lat": a["lat"],
             "lon": a["lon"],
+            "map_point": self.map_point(a),
             "polygon": json.loads(a["polygon"]) if a["polygon"] else None,
             "place_type": a["place_type"],
             "near_sensitive": bool(a["near_sensitive"]),

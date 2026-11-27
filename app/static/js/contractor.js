@@ -63,7 +63,10 @@
   function geo(a) { return `geo:${a.lat},${a.lon}?q=${a.lat},${a.lon}`; }
 
   function jobHTML(a) {
-    const banner = (a.overdue ? `<div class="banner overdue">⚠ ${esc(t("overdueJob"))}</div>` : "")
+    // the inspector's written warnings (newest first) are the first thing on the job
+    const warns = a.status !== "verified" && (a.warnings || []).length ? `<div class="banner warning"><b>${esc(t("warnFromInspector"))}</b>${a.warnings
+      .map((w) => `<div class="warn-line"><span class="when">${esc(L$.fmtTime(w.at))}</span> ${esc(w.message)}</div>`).join("")}</div>` : "";
+    const banner = warns + (a.overdue ? `<div class="banner overdue">⚠ ${esc(t("overdueJob"))}</div>` : "")
       + (a.status === "reopened" ? `<div class="banner">↻ ${esc(t("redo"))}</div>`
         : a.status === "done_reported" ? `<div class="banner done">⏳ ${esc(t("waitingCheck"))}</div>` : "");
     const open = a.status !== "verified";
@@ -84,7 +87,6 @@
             <div class="muted small">${esc(a.district || "")}${a.hazard_now && a.hazard_now !== "reported" ? ` · ${esc(L$.hazard(a.hazard_now))}` : ""}</div></div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">${L$.levelBadge(a.urgency_level, a.status)}${L$.statusBadge(a.status)}</div>
         </div>
-        ${open ? `<div class="sev-box">${L$.severityBadge(a)}<span class="muted small">${esc(t(a.severity === "act" ? "actJob" : "noticeJob"))}</span></div>` : ""}
         ${a.latest_crop_url ? `<figure style="margin:0"><img class="crop" src="${esc(a.latest_crop_url)}" data-zoom="${esc(a.latest_crop_url)}" alt="${esc(t("lastFrame"))}" loading="lazy"><figcaption class="muted small">${esc(t("lastFrame"))}</figcaption></figure>` : ""}
         <div class="facts">${facts}</div>
         ${photos ? `<div><div class="muted small" style="margin-bottom:4px">${esc(t("residentPhotos"))}</div><div class="thumbs">${photos}</div></div>` : ""}

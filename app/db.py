@@ -102,6 +102,16 @@ CREATE TABLE IF NOT EXISTS status_history (
 );
 CREATE INDEX IF NOT EXISTS idx_history_alert ON status_history(alert_id);
 
+CREATE TABLE IF NOT EXISTS warnings (     -- the inspector's written warnings to the contractor
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_id      INTEGER NOT NULL REFERENCES alerts(id),
+    contractor_id TEXT,
+    message       TEXT NOT NULL,
+    actor         TEXT NOT NULL,
+    at            TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_warnings_alert ON warnings(alert_id);
+
 CREATE TABLE IF NOT EXISTS devices (      -- blocked senders (spam)
     device_id     TEXT PRIMARY KEY,
     blocked_until TEXT NOT NULL,
@@ -175,7 +185,7 @@ class Database:
     def reset(self) -> None:
         with self.lock:
             self.conn.executescript(
-                "DROP TABLE IF EXISTS status_history; DROP TABLE IF EXISTS signals;"
+                "DROP TABLE IF EXISTS warnings; DROP TABLE IF EXISTS status_history; DROP TABLE IF EXISTS signals;"
                 "DROP TABLE IF EXISTS spam_events; DROP TABLE IF EXISTS devices; DROP TABLE IF EXISTS snowfalls;"
                 "DROP TABLE IF EXISTS reports; DROP TABLE IF EXISTS alerts;")
             self.conn.executescript(SCHEMA)

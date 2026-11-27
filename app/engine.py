@@ -565,6 +565,24 @@ class Engine:
                               (note + " · " if note else "") + f"severity {a['severity']} -> {severity}")
             return self.alert(alert_id)
 
+    def send_warning(self, alert_id: int, message: str, actor: str = ""):
+        """The inspector's written warning to the contractor of this alert (instead of a fine): the
+        contractor sees it on the job, and it goes to the history as evidence."""
+        message = " ".join((message or "").split())
+        if not message:
+            raise RuleError("the warning needs a message")
+        with self.db.lock:
+            a = self.alert(alert_id)
+            if a is None:
+                raise KeyError(alert_id)
+            if a["status"] not in DISPATCHED or not a["contractor_id"]:
+                raise RuleError(f"the contractor does not have this job (alert is {a['status']})")
+            who = f"inspector:{actor or 'inspector'}"
+            self.db.run("INSERT INTO warnings(alert_id, contractor_id, message, actor, at) VALUES(?, ?, ?, ?, ?)",
+                        (alert_id, a["contractor_id"], message, who, fmt_ts(self.clock.now())))
+            self._history(alert_id, a["status"], a["status"], who, f"warning to the contractor: {message}")
+            return self.alert(alert_id)
+
     def change_status(self, alert_id: int, to: str, role: str, actor: str, note: str = "",
                       contractor_id: Optional[str] = None, false_alarm: bool = False):
         if to not in STATUSES:

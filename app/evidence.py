@@ -85,7 +85,6 @@ def render(ev: dict, tile_url: str, tile_attribution: str, images_credit: str, s
     hist = "".join(f"<tr><td>{_e(h['riga_time'])}</td><td>{_e(h['from_status'] or '—')} → {_e(h['to_status'])}</td>"
                    f"<td>{_e(h['actor'])}</td><td>{_e(h['note'])}</td></tr>" for h in ev["history"])
     overdue = f'<span class="tag red">{_e(t["overdue"])}</span>' if ev["overdue"] else ""
-    sev = ev["severity"] or "notice"
     reopened = f" · reopened ×{ev['reopened_count']}" if ev["reopened_count"] else ""
     geo = json.dumps({"lat": p["lat"], "lon": p["lon"], "polygon": p["polygon"], "tile": tile_url,
                       "attr": tile_attribution}).replace("</", "<\\/")
@@ -122,16 +121,15 @@ footer {{ margin-top:28px; font-size:12px; color:var(--muted); border-top:1px so
 <button onclick="print()">{_e(t['print'])}</button></p>
 <h1>{_e(t['title'])} · {_e(t['alert'])} #{ev['alert_id']}</h1>
 <div class="muted">{_e(t['generated'])} {_e(ev['generated_riga'])} ({_e(t['riga'])}) · {_e(t['status'])} <b>{_e(ev['status'])}</b>
-<span class="tag {'act' if sev == 'act' else ''}">{_e(t[sev])}</span>{overdue}</div>
-<div class="muted small">{_e(ev['severity_reason'] or '')}{reopened}</div>
+{overdue}</div>
+<div class="muted small">{reopened}</div>
 
 <div class="grid">
 <section><h2>{_e(t['place'])}</h2><div id="map"></div>
 <table class="kv"><tr><th>{_e(t['district'])}</th><td>{_e(p['district'])}</td></tr>
 <tr><th>{_e(t['contractor'])}</th><td>{_e(p['contractor_name'] or p['contractor_id'])}</td></tr>
 <tr><th>{_e(t['camera_zone'])}</th><td>{_e(p['camera_name'] or p['camera_id'] or '—')}<br><span class=muted>{_e(p['zone_id'] or t['resident'])}</span></td></tr>
-<tr><th>{_e(t['place_type'])}</th><td>{_e(p['place_type'])}</td></tr>
-<tr><th>{_e(t['coords'])}</th><td>{p['lat']:.5f}, {p['lon']:.5f}</td></tr></table></section>
+<tr><th>{_e(t['place_type'])}</th><td>{_e(p['place_type'])}</td></tr></table></section>
 <section><h2>{_e(t['deadline'])}</h2>
 <table class="kv"><tr><th>{_e(t['deadline_short'])}</th><td><b>{_e(d['riga_time'] or '—')}</b> ({_e(t['riga'])})<br>
 <span class=muted>{_e(d['deadline_at'] or '')} UTC</span></td></tr>

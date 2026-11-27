@@ -307,3 +307,13 @@ button, select, input, textarea { font: inherit; color: inherit; }
 
 /* clicking a section or square must not leave a black focus box around it */
 .leaflet-container path.leaflet-interactive:focus:not(:focus-visible) { outline: none; }
+
+/* the inspector's written warning to the contractor */
+.warn-form textarea { width: 100%; min-height: 84px; padding: 8px; border: 1px solid var(--line); background: var(--surface); resize: vertical; }
+.warn-form .actions { margin-top: 8px; }
+.warn-list { list-style: none; margin: 4px 0 0; padding: 0; }
+.warn-list li { display: grid; grid-template-columns: auto 1fr; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.warn-list .when, .warn-line .when { color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.job .banner.warning { background: #fff4e5; color: #5c3b00; border-bottom: 1px solid #f0c27a; font-weight: 400; }
+.job .banner.warning b { display: block; margin-bottom: 2px; }
+.warn-line { margin-top: 2px; }

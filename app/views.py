@@ -139,6 +139,9 @@ class Views:
             "before_crop_url": before["crop_url"] if before else None,
             "after_crop_url": last["crop_url"] if last and last is not before else None,
             "report_photos": [_photo_url(r["photo_path"]) for r in reps if r["photo_path"]][:4],
+            # the inspector's written warnings, newest first: the contractor sees them on the job
+            "warnings": [{"message": w["message"], "at": w["at"]} for w in self.db.q(
+                "SELECT message, at FROM warnings WHERE alert_id = ? ORDER BY id DESC", (a["id"],))],
             "updated_at": a["updated_at"],
         }
         if role == "inspector":

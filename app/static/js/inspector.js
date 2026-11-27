@@ -341,7 +341,7 @@
 
   function itemHTML(a, rank) {
     const col = L$.alertColor(a);
-    const chips = (a.why || a.inspector_flags || []).map((w) => {
+    const chips = (a.why || a.inspector_flags || []).filter((w) => w !== "act").map((w) => {
       const cls = w === "act" ? "sev-act" : w === "overdue" ? "overdue" : w === "reopened" ? "purple"
         : (w === "high" || w === "possible_ice" || w === "ice_report") ? "alarm" : "warn";
       return `<span class="chip ${cls}">${esc(t("why_" + w))}</span>`;
@@ -439,12 +439,12 @@
     return `<div class="tbl-wrap"><table class="tbl"><thead><tr>
       <th>${esc(nameKey)}</th><th class="num">${esc(t("c_opened"))}</th><th class="num">${esc(t("c_verified"))}</th>
       <th class="num">${esc(t("c_avg"))}</th><th class="num">${esc(t("c_within", { n }))}</th><th class="num">${esc(t("c_reopened"))}</th>
-      <th class="num">${esc(t("c_overdue"))}</th><th class="num">${esc(t("c_act"))}</th>
+      <th class="num">${esc(t("c_overdue"))}</th>
       <th class="num">${esc(t("c_notify"))}</th><th class="num">${esc(t("c_kpi", { n: k }))}</th></tr></thead><tbody>
       ${rows.map((r) => `<tr><td>${esc(r.name || r.id)}</td><td class="num">${r.opened}</td><td class="num">${r.verified}</td>
         <td class="num">${L$.hours(r.avg_response_hours)}</td><td class="num">${L$.pct(r.share_within)}</td>
         <td class="num">${r.reopened_times}</td>
-        <td class="num" style="${r.overdue ? "color:var(--high);font-weight:700" : ""}">${r.overdue}</td><td class="num">${r.act}</td>
+        <td class="num" style="${r.overdue ? "color:var(--high);font-weight:700" : ""}">${r.overdue}</td>
         <td class="num">${r.avg_notify_minutes == null ? t("none") : Math.round(r.avg_notify_minutes)}</td>
         <td class="num">${L$.pct(r.share_notify_kpi)}</td></tr>`).join("")}
       </tbody></table></div>`;
@@ -534,19 +534,13 @@
         ${d.status === "cleared_in_time" ? `<div class="note-box">${esc(t("clearedNote"))}</div>` : ""}
         ${flags.length ? `<div style="margin-top:8px">${flags.map((f) => `<span class="chip ${f === "possible_ice" || f === "ice_report" ? "alarm" : "warn"}">${esc(t("why_" + f))}</span>`).join("")}</div>` : ""}
       </section>
-      <section><h3>${esc(t("sevTitle"))}</h3>
-        <div class="sev-box">${L$.severityBadge(d)}
-          <span class="muted small">${d.severity_manual ? esc(t("sevManual")) + " · " : ""}${esc(t("sevSuggested", { s: t("sev_" + (d.severity_suggested || "notice")) }))}${d.severity_reason ? " — " + esc(d.severity_reason) : ""}</span>
-          <button class="btn" type="button" id="sevToggle" data-sev="${d.severity === "act" ? "notice" : "act"}">${esc(t(d.severity === "act" ? "sevToNotice" : "sevToAct"))}</button>
-          ${d.evidence_url ? `<a class="btn primary" href="${esc(d.evidence_url)}&lang=${esc(L$.lang)}" target="_blank" rel="noopener" title="${esc(t("evidenceHint"))}">📄 ${esc(t("evidencePack"))}</a>` : ""}
-        </div>
-        <p class="muted small" style="margin:6px 0 0">${esc(t("sevNote"))}</p>
-      </section>
+      ${warnHTML(d)}
       <section><h3>${esc(t("why"))} · ${esc(t("urgency"))} ${d.urgency_score}</h3><ul class="reasons">${reasons || `<li class="muted">${esc(t("none"))}</li>`}</ul></section>
       <section><h3>${esc(t("actions"))}</h3>
         <div class="actions">
           <textarea id="actNote" maxlength="500" placeholder="${esc(t("noteLabel"))}" aria-label="${esc(t("noteLabel"))}"></textarea>
           ${acts.map(([s, label, cls]) => `<button class="btn ${cls}" type="button" data-act="${s}">${esc(label)}</button>`).join("")}
+          ${d.evidence_url ? `<a class="btn" href="${esc(d.evidence_url)}&lang=${esc(L$.lang)}" target="_blank" rel="noopener" title="${esc(t("evidenceHint"))}">${esc(t("evidencePack"))}</a>` : ""}
         </div>
         <div class="err" id="actErr" role="alert"></div>
       </section>
@@ -558,6 +552,20 @@
     </div>`;
   }
 
+  // the written warning to the contractor (replaces the old "defect act" fine button)
+  function warnHTML(d) {
+    const can = ["open", "done_reported", "reopened"].includes(d.status) && d.contractor_id;
+    const sent = (d.warnings || []).map((w) => `<li><span class="when">${esc(L$.fmtTime(w.at))}</span><span>${esc(w.message)}</span></li>`).join("");
+    return `<section><h3>${esc(t("warnTitle"))}${d.contractor_name ? ` · ${esc(d.contractor_name)}` : ""}</h3>
+      ${can ? `<div class="warn-form">
+          <textarea id="warnMsg" maxlength="500" placeholder="${esc(t("warnPlaceholder"))}" aria-label="${esc(t("warnTitle"))}"></textarea>
+          <div class="actions"><button class="btn primary" type="button" id="warnSend">${esc(t("warnSend"))}</button></div>
+          <div class="err" id="warnErr" role="alert"></div>
+        </div>` : `<p class="muted small">${esc(t("warnNotYet"))}</p>`}
+      ${sent ? `<div class="small muted" style="margin-top:10px">${esc(t("warnHistory"))}</div><ul class="warn-list">${sent}</ul>` : ""}
+    </section>`;
+  }
+
   function renderCard(el) {
     const d = S.detail;
     if (!d || d.id !== S.selected) {
@@ -565,13 +573,16 @@
       bindCard(el);
       return;
     }
-    const note = el.querySelector("#actNote");
-    if (note && document.activeElement === note) return; // don't disturb typing
-    const noteVal = note ? note.value : "";
-    const errVal = el.querySelector("#actErr") ? el.querySelector("#actErr").textContent : "";
+    // don't disturb typing: the panel re-renders on every poll
+    const typing = ["actNote", "warnMsg"].some((id) => { const x = el.querySelector("#" + id); return x && document.activeElement === x; });
+    if (typing) return;
+    const keep = {};
+    ["actNote", "warnMsg"].forEach((id) => { const x = el.querySelector("#" + id); if (x) keep[id] = x.value; });
+    const errs = {};
+    ["actErr", "warnErr"].forEach((id) => { const x = el.querySelector("#" + id); if (x) errs[id] = x.textContent; });
     if (setHTML(el, "panel", cardHTML(d))) {
-      if (el.querySelector("#actNote")) el.querySelector("#actNote").value = noteVal;
-      if (el.querySelector("#actErr")) el.querySelector("#actErr").textContent = errVal;
+      Object.entries(keep).forEach(([id, v]) => { const x = el.querySelector("#" + id); if (x) x.value = v; });
+      Object.entries(errs).forEach(([id, v]) => { const x = el.querySelector("#" + id); if (x) x.textContent = v; });
       bindCard(el);
     }
   }
@@ -579,16 +590,25 @@
   function bindCard(el) {
     const back = el.querySelector("#cardBack");
     if (back) back.addEventListener("click", () => { S.selected = null; S.detail = null; S.rendered.panel = null; renderTabs(); renderPanel(); updateMap(); });
-    const sev = el.querySelector("#sevToggle");
-    if (sev) sev.addEventListener("click", async () => {
-      sev.disabled = true;
+    const send = el.querySelector("#warnSend");
+    if (send) send.addEventListener("click", async () => {
+      const box = el.querySelector("#warnMsg");
+      const errEl = el.querySelector("#warnErr");
+      const message = (box && box.value || "").trim();
+      if (errEl) errEl.textContent = "";
+      if (!message) { if (errEl) errEl.textContent = t("warnEmpty"); if (box) box.focus(); return; }
+      send.disabled = true;
       try {
-        S.detail = await api(`/alerts/${S.selected}/status`, { json: { severity: sev.dataset.sev, role: "inspector", actor: ACTOR,
-          note: (el.querySelector("#actNote") || {}).value || "" } });
+        S.detail = await api(`/alerts/${S.selected}/warning`, { json: { role: "inspector", actor: ACTOR, message } });
+        if (box) box.value = "";
         S.rendered.panel = null;
-        L$.toast(t("saved"));
+        L$.toast(t("warnSent"));
         await refresh();
-      } catch (e) { sev.disabled = false; L$.toast(e.message, true); }
+      } catch (e) {
+        send.disabled = false;
+        if (errEl) errEl.textContent = e.message;
+        L$.toast(e.message, true);
+      }
     });
     el.querySelectorAll("[data-act]").forEach((b) => b.addEventListener("click", async () => {
       const note = (el.querySelector("#actNote") || {}).value || "";

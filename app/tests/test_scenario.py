@@ -387,3 +387,26 @@ def test_validation(make_client, mock_dir):
                                            "end": "2026-11-25T09:00:00Z"}).status_code == 422
     exp = client.get("/export.geojson").json()
     assert exp["type"] == "FeatureCollection"
+
+
+def test_the_inspector_warns_the_contractor_in_writing(make_client, mock_dir):
+    """Instead of a fine: a written warning the contractor sees on the job, kept in the history."""
+    day = Day(*make_client())
+    c = day.client
+    day.clock.set(riga("09:00"))   # deadline 08:00 has passed: the alert goes straight to the contractor
+    sq = day.signal(SQUARE, "snow", 0.4, 0.8)
+    a = day.alert(sq)
+    assert a["status"] == "open" and a["warnings"] == []
+    msg = "Brīvības iela 30: the sidewalk is still not cleared. Please clear it by 12:00. <b>"
+    r = c.post(f"/alerts/{sq}/warning", json={"role": "inspector", "actor": "anna", "message": msg})
+    assert r.status_code == 200, r.text
+    assert r.json()["warnings"][0]["message"] == msg
+    assert r.json()["history"][-1]["note"] == "warning to the contractor: " + msg
+    job = [j for j in c.get("/alerts", params={"role": "contractor", "contractor": a["contractor_id"]}).json()["alerts"]
+           if j["id"] == sq][0]
+    assert job["warnings"][0]["message"] == msg                  # on the contractor's job card
+    assert c.post(f"/alerts/{sq}/warning", json={"role": "inspector", "message": "   "}).status_code == 409
+    assert c.post(f"/alerts/{sq}/warning", json={"role": "contractor", "message": "x"}).status_code == 422
+    assert c.post("/alerts/999/warning", json={"role": "inspector", "message": "x"}).status_code == 404
+    c.post(f"/alerts/{sq}/status", json={"status": "verified", "role": "inspector", "actor": "anna"})
+    assert c.post(f"/alerts/{sq}/warning", json={"role": "inspector", "message": "x"}).status_code == 409  # closed

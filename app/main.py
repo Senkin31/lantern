@@ -476,6 +476,23 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
             raise HTTPException(409, str(exc))
         return views.alert(a, body.role, detail=True)
 
+    class WarningIn(BaseModel):
+        role: Literal["inspector"]
+        message: str = Field(..., min_length=1, max_length=500)
+        actor: str = ""
+
+    @app.post("/alerts/{alert_id}/warning", tags=["inspector"])
+    def send_warning(alert_id: int, body: WarningIn):
+        """The inspector writes a warning to the contractor of an open job; the contractor sees it on the
+        job card and it goes to the status history (evidence)."""
+        try:
+            a = engine.send_warning(alert_id, body.message, body.actor)
+        except KeyError:
+            raise HTTPException(404, "unknown alert")
+        except RuleError as exc:
+            raise HTTPException(409, str(exc))
+        return views.alert(a, "inspector", detail=True)
+
     @app.get("/alerts/{alert_id}/evidence", tags=["inspector"], response_class=HTMLResponse)
     def alert_evidence(alert_id: int, role: str = "inspector", format: Literal["html", "json"] = "html",
                        lang: Literal["en", "lv"] = "en"):

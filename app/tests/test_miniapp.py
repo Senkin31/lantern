@@ -194,3 +194,44 @@ def test_chat_mode_has_the_buttons_too(make_client, tmp_path):
     rows = last_markup(fake)["keyboard"]
     assert len(rows) == 1 and rows[0][0]["text"] == "📋 My reports"
     assert "Send one photo" in fake.texts(77)[-1]
+
+
+# ---------------------------------------------------------------- private bot
+def test_private_bot_answers_only_allowed_people(make_client, tmp_path):
+    client, engine, _ = setup(make_client)
+    fake = FakeTelegram()
+    tg = Telegram("TOKEN", "http://tg.test", client=httpx.Client(transport=httpx.MockTransport(fake.handler)))
+    bot = LanternBot(tg, client, State(tmp_path / "s.json"), "https://lantern.example", allowed={1001})
+    stranger, owner = 2002, 1001
+
+    for update in (fake.msg(stranger, text="/start"), fake.msg(stranger, text="hello"),
+                   fake.msg(stranger, photo=[{"file_id": "p", "width": 9, "height": 9}]),
+                   fake.msg(stranger, web_app_data={"data": json.dumps({"ticket": "ABCDEFGH"})})):
+        bot.handle_update(update)
+    texts = fake.texts(stranger)
+    assert len(texts) == 4 and all("private" in x for x in texts)
+    assert all("web_app" not in json.dumps(p.get("reply_markup")) for m, p in fake.sent)  # no pass for them
+    bot.handle_update(fake.cb(stranger, "lang:en"))
+    assert fake.sent[-1][0] == "answerCallbackQuery"
+    assert str(stranger) not in bot.state.data["chats"]                                  # nothing stored
+    assert engine.db.one("SELECT COUNT(*) AS n FROM reports")["n"] == 0
+
+    bot.handle_update(fake.msg(owner, text="/start"))
+    bot.handle_update(fake.cb(owner, "lang:en"))
+    assert "web_app" in last_markup(fake)["keyboard"][0][0]                              # owner gets the app
+
+    fake.sent.clear()
+    bot.setup_profile()
+    methods = [m for m, p in fake.sent]
+    assert methods.count("deleteMyCommands") == 4                       # strangers see no command menu
+    scoped = [p for m, p in fake.sent if m == "setMyCommands"]
+    assert scoped and all(p["scope"] == {"type": "chat", "chat_id": owner} for p in scoped)
+    about = [p["description"] for m, p in fake.sent if m == "setMyDescription"]
+    assert all("private" in d or "privāts" in d or "приватный" in d for d in about)
+
+
+def test_public_bot_when_no_allowlist(make_client, tmp_path):
+    client, _, _ = setup(make_client)
+    bot, fake = make_app_bot(client, tmp_path)
+    bot.handle_update(fake.msg(31337, text="/start"))
+    assert "private" not in fake.texts(31337)[-1]

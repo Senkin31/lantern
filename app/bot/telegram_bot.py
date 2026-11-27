@@ -16,6 +16,10 @@ taking photos from the chat, which can come from the gallery, the bot shows a "R
 that opens /tg inside Telegram. That page takes the photo with the live camera and sends the
 phone's own position; the button URL carries a signed pass for this person (app/tgapp.py).
 When the page is done it hands the ticket back (web_app_data) and the bot follows it as usual.
+
+Private mode (TELEGRAM_ALLOWED_USERS = comma-separated Telegram user ids): the bot answers only
+those people. Anyone else gets one line saying the bot is private: no buttons, no Mini App pass,
+nothing stored about them, and the command menu is shown only in the allowed chats.
 """
 import hashlib
 import json
@@ -154,11 +158,13 @@ class State:
 
 
 class LanternBot:
-    def __init__(self, telegram: Telegram, api: httpx.Client, state: State, webapp_url: str = ""):
+    def __init__(self, telegram: Telegram, api: httpx.Client, state: State, webapp_url: str = "",
+                 allowed: Optional[set] = None):
         self.tg = telegram
         self.api = api
         self.state = state
         self.webapp_url = (webapp_url or "").rstrip("/")
+        self.allowed = set(allowed or ())  # empty: public bot; else only these Telegram user ids
         self.drafts: dict = {}  # chat_id -> in-progress report (in memory only)
         self.last_status_check = 0.0
 
@@ -224,8 +230,36 @@ class LanternBot:
         self.send(chat_id, text, self.inline([[(t("btn_send", L), "ok:send"), (t("btn_cancel", L), "ok:cancel")]]))
 
     # ------------------------------------------------------------------ updates
+    def let_in(self, user_id) -> bool:
+        return not self.allowed or user_id in self.allowed
+
+    def turn_away(self, update: dict) -> bool:
+        """Private mode: True (and one short reply) for anyone not on the allowlist. Nothing about them
+        is stored: no chat entry, no language, no pass."""
+        if not self.allowed:
+            return False
+        if "callback_query" in update:
+            cb = update["callback_query"]
+            if self.let_in((cb.get("from") or {}).get("id")):
+                return False
+            try:
+                self.tg.call("answerCallbackQuery", callback_query_id=cb["id"], text=t("private", "en"))
+            except (TelegramError, httpx.HTTPError):
+                pass
+            log.info("ignored a button press from someone not on the allowlist")
+            return True
+        msg = update.get("message") or {}
+        if not msg or self.let_in((msg.get("from") or {}).get("id")):
+            return False
+        if (msg.get("chat") or {}).get("type", "private") == "private":
+            self.send(msg["chat"]["id"], t("private", "en"), {"remove_keyboard": True})
+        log.info("ignored a message from someone not on the allowlist")
+        return True
+
     def handle_update(self, update: dict) -> None:
         try:
+            if self.turn_away(update):
+                return
             if "callback_query" in update:
                 self.on_callback(update["callback_query"])
             elif "message" in update:
@@ -373,17 +407,27 @@ class LanternBot:
         """Command menu (the Menu button next to the message field) and the description people see in an
         empty chat before pressing Start, in every bot language. Failures only log: the bot still works."""
         cmds = ("start", "status", "lang", "help")
+        private = bool(self.allowed)
+        calls = []
         for L in (None,) + LANGS:  # None: the default for any other app language
             code = L or "lv"
             extra = {"language_code": L} if L else {}
-            calls = [("setMyCommands", {"commands": [{"command": c, "description": t(f"cmd_{c}", code)} for c in cmds]}),
-                     ("setMyDescription", {"description": t("bot_about", code)}),
-                     ("setMyShortDescription", {"short_description": t("bot_short", code)})]
-            for method, params in calls:
-                try:
-                    self.tg.call(method, **params, **extra)
-                except (TelegramError, httpx.HTTPError) as exc:
-                    log.warning("%s failed: %s", method, exc)
+            menu = [{"command": c, "description": t(f"cmd_{c}", code)} for c in cmds]
+            if private:  # strangers see no menu; the allowed chats get it in their own scope
+                calls.append(("deleteMyCommands", dict(extra)))
+                calls += [("setMyCommands", {"commands": menu, "scope": {"type": "chat", "chat_id": uid}, **extra})
+                          for uid in sorted(self.allowed)]
+            else:
+                calls.append(("setMyCommands", {"commands": menu, **extra}))
+            calls.append(("setMyDescription", {"description": t("bot_about_private" if private else "bot_about", code),
+                                               **extra}))
+            calls.append(("setMyShortDescription", {"short_description": t("bot_short_private" if private
+                                                                           else "bot_short", code), **extra}))
+        for method, params in calls:
+            try:
+                self.tg.call(method, **params)
+            except (TelegramError, httpx.HTTPError) as exc:
+                log.warning("%s failed: %s", method, exc)
 
     # ------------------------------------------------------------------ server
     def submit(self, chat_id) -> None:
@@ -582,7 +626,9 @@ def main() -> None:
         log.warning("WEBAPP_URL must be https (Telegram refuses other links); Mini App is off")
         webapp = ""
     log.info("mini app: %s", "on" if webapp else "off (photos from the chat)")
-    bot = LanternBot(tg, api, state, webapp)
+    allowed = {int(x) for x in env("TELEGRAM_ALLOWED_USERS", "").replace(" ", "").split(",") if x.lstrip("-").isdigit()}
+    log.info("access: %s", f"private, {len(allowed)} allowed account(s)" if allowed else "public (anyone)")
+    bot = LanternBot(tg, api, state, webapp, allowed)
     bot.setup_profile()
     bot.run_forever()
 

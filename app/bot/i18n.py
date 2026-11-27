@@ -109,6 +109,18 @@ T = {
     },
     "cancelled": {"lv": "Atcelts. Lai sāktu no jauna, nosūti foto.", "en": "Cancelled. Send a photo to start again.",
                   "ru": "Отменено. Чтобы начать заново, пришлите фото."},
+    "private": {
+        "lv": "🔒 Šis bots ir privāts. / This bot is private. / Этот бот приватный.",
+        "en": "🔒 Šis bots ir privāts. / This bot is private. / Этот бот приватный.",
+        "ru": "🔒 Šis bots ir privāts. / This bot is private. / Этот бот приватный.",
+    },
+    "bot_short_private": {"lv": "🔒 Privāts Lantern komandas testa bots.", "en": "🔒 Private test bot of the Lantern team.",
+                          "ru": "🔒 Приватный тестовый бот команды Lantern."},
+    "bot_about_private": {
+        "lv": "🔒 Šis ir privāts Lantern komandas testa bots. Tas atbild tikai komandas dalībniekiem.",
+        "en": "🔒 This is a private test bot of the Lantern team. It only answers team members.",
+        "ru": "🔒 Это приватный тестовый бот команды Lantern. Он отвечает только участникам команды.",
+    },
     "btn_status": {"lv": "📋 Mani pieteikumi", "en": "📋 My reports", "ru": "📋 Мои заявки"},
     "btn_lang": {"lv": "🌐 Valoda", "en": "🌐 Language", "ru": "🌐 Язык"},
     "btn_help": {"lv": "❓ Palīdzība", "en": "❓ Help", "ru": "❓ Помощь"},

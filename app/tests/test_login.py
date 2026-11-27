@@ -108,7 +108,7 @@ def test_safe_redirect_after_login():
 def login_bot(client, tmp_path, allowed=()):
     fake = FakeTelegram()
     tg = Telegram("TOKEN", "http://tg.test", client=httpx.Client(transport=httpx.MockTransport(fake.handler)))
-    return LanternBot(tg, client, State(tmp_path / "s.json"), "https://lantern.example", set(allowed), PW, "DNH"), fake
+    return LanternBot(tg, client, State(tmp_path / "s.json"), "https://lantern.example", set(allowed), PW, "TEAM"), fake
 
 
 def test_bot_asks_login_then_password(make_client, tmp_path):
@@ -119,14 +119,14 @@ def test_bot_asks_login_then_password(make_client, tmp_path):
     bot.handle_update(fake.msg(friend, text="/start"))
     assert "Enter your login" in fake.texts(friend)[-1]
     assert [p for m, p in fake.sent if m == "sendMessage"][-1]["reply_markup"] == {"remove_keyboard": True}
-    bot.handle_update(fake.msg(friend, text="dnh"))                      # login is not case-sensitive
+    bot.handle_update(fake.msg(friend, text="team"))                      # login is not case-sensitive
     assert "Enter your password" in fake.texts(friend)[-1]
     bot.handle_update(fake.msg(friend, text="wrong"))
     assert "Wrong login or password" in fake.texts(friend)[-1] and "Enter your login" in fake.texts(friend)[-1]
     assert [m for m, p in fake.sent].count("deleteMessage") == 2         # login and password are not left in the chat
     assert str(friend) not in bot.state.data["chats"]                    # nothing stored before a login
 
-    bot.handle_update(fake.msg(friend, text="DNH"))
+    bot.handle_update(fake.msg(friend, text="TEAM"))
     bot.handle_update(fake.msg(friend, text=PW))
     assert any("logged in" in x for x in fake.texts(friend))
     assert json.loads((tmp_path / "s.json").read_text(encoding="utf-8"))["allowed_users"] == [friend]
@@ -156,9 +156,9 @@ def test_bot_login_tries_are_limited(make_client, tmp_path):
     bot, fake = login_bot(client, tmp_path)
     bot.handle_update(fake.msg(4004, text="/start"))
     for _ in range(5):
-        bot.handle_update(fake.msg(4004, text="DNH"))
+        bot.handle_update(fake.msg(4004, text="TEAM"))
         bot.handle_update(fake.msg(4004, text="guess"))
-    bot.handle_update(fake.msg(4004, text="DNH"))
+    bot.handle_update(fake.msg(4004, text="TEAM"))
     bot.handle_update(fake.msg(4004, text=PW))
     assert "Too many tries" in fake.texts(4004)[-1]
     assert 4004 not in (bot.state.data.get("allowed_users") or [])

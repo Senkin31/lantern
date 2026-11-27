@@ -1,6 +1,6 @@
 # Lantern Telegram bot
 
-**Our bot: [@lantern_riga_bot](https://t.me/lantern_riga_bot)** (`https://t.me/lantern_riga_bot`). It is private: it asks for the team login and password, which are not written in this repository. Ask the team.
+**Run your own bot** (see [Run](#run)): create one with @BotFather and put its token in `.env`. With no `LANTERN_PASSWORD` set (the default) the bot answers everyone and the web app has no login. Set a password to make both private (see **Private bot** below).
 
 Residents send a sidewalk problem from Telegram: **photo → location → Send**. Nothing else is asked: the model reads from the photo what is there and how bad it is (the server fills `passable` and `hazard` from its verdict, marked as the AI's). The bot is a thin client of the Lantern server:
 

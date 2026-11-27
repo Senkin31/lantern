@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="lv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>Lantern</title>
+  <link rel="stylesheet" href="/assets/vendor/leaflet/leaflet.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    /* the same plain public-service look as the rest of Lantern: light only, navy, square corners, no emoji */
+    :root {
+      --bg: #eef1f4; --card: #ffffff; --text: #1b1f24; --hint: #545e6b; --line: #c6cdd6; --field: #8a94a3;
+      --ink: #0b3a6b; --ink-2: #082c52; --ok: #1e6b3a; --warn: #7a4d00; --bad: #b3261e; --r: 2px;
+      color-scheme: light;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.4 "Segoe UI", Roboto, Arial, sans-serif; }
+    .top { background: var(--ink); color: #fff; padding: 8px 16px; border-bottom: 4px solid var(--ink-2); }
+    .top b { font-size: 17px; }
+    .top .sub { font-size: 12px; color: #c9d6e6; }
+    .proto { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; vertical-align: 2px;
+      border: 1px solid #c9d6e6; padding: 0 5px; margin-left: 6px; border-radius: var(--r); }
+    main { padding: 12px 16px 24px; max-width: 520px; margin: 0 auto; }
+    h1 { font-size: 20px; margin: 4px 0 2px; }
+    .lead { color: var(--hint); margin: 0 0 12px; font-size: 14px; }
+    .frame { position: relative; width: 100%; aspect-ratio: 3 / 4; max-height: 58vh; border-radius: var(--r); overflow: hidden;
+      background: #000; border: 1px solid var(--line); }
+    .frame.small { max-height: 30vh; }
+    #place { margin-top: 10px; }
+    #place .place-h { font-weight: 700; margin-bottom: 6px; }
+    #pmap { height: 210px; border: 1px solid var(--line); z-index: 0; }
+    #pmap .leaflet-bar, #pmap .leaflet-bar a { border-radius: var(--r) !important; }
+    .pin { width: 28px; height: 28px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+      background: var(--ink); border: 3px solid #fff; box-shadow: 0 0 0 1px var(--ink); }
+    .frame video, .frame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .frame .msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      padding: 24px; text-align: center; color: #fff; font-size: 15px; }
+    .shutter { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); width: 72px; height: 72px;
+      border-radius: 50%; border: 5px solid rgba(255, 255, 255, .9); background: rgba(255, 255, 255, .35);
+      cursor: pointer; }
+    .shutter:active { background: rgba(255, 255, 255, .8); }
+    .row { display: flex; gap: 8px; margin-top: 10px; }
+    button.btn { flex: 1; border: 1px solid var(--ink); border-radius: var(--r); padding: 12px 14px; min-height: 48px;
+      font: inherit; font-weight: 700; background: var(--ink); color: #fff; cursor: pointer; }
+    button.btn.ghost { background: var(--card); color: var(--text); border-color: var(--field); }
+    button.btn:disabled { opacity: .5; }
+    button:focus-visible { outline: 3px solid #ffbf47; outline-offset: 0; }
+    .loc { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-left: 4px solid var(--field);
+      background: var(--card); font-size: 14px; }
+    .loc.ok { color: var(--ok); border-left-color: var(--ok); }
+    .loc.warn { color: var(--warn); border-left-color: #b86e00; }
+    .loc.bad { color: var(--bad); border-left-color: var(--bad); }
+    .result { padding: 20px 16px; border: 1px solid var(--line); background: var(--card); text-align: center; }
+    /* a tick drawn in CSS (navy while under review), or an exclamation mark: no emoji */
+    .mark { position: relative; width: 56px; height: 56px; margin: 0 auto 10px; border-radius: 50%; background: var(--ok); }
+    .mark::after { content: ""; position: absolute; left: 20px; top: 13px; width: 13px; height: 24px;
+      border: solid #fff; border-width: 0 4px 4px 0; transform: rotate(45deg); }
+    .mark.review { background: var(--ink); }
+    .mark.reject { background: var(--hint); }
+    .mark.reject::after { content: "!"; left: 0; top: 0; width: 56px; height: 56px; border: 0; transform: none;
+      color: #fff; font-size: 32px; font-weight: 700; line-height: 56px; text-align: center; }
+    .result .ticket { font-family: ui-monospace, monospace; font-size: 18px; font-weight: 700; margin-top: 8px; }
+    .small { color: var(--hint); font-size: 13px; margin-top: 10px; }
+    .note { color: var(--text); font-size: 12px; font-weight: 600; margin-top: 10px; }
+    .diag { color: var(--hint); font: 11px/1.3 ui-monospace, monospace; margin-top: 6px; opacity: .7; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <header class="top"><b>Lantern</b><span class="proto" data-t="proto">Prototips</span>
+    <div class="sub" data-t="service">Ziņojumi par ietvēm ziemā</div></header>
+  <main>
+    <h1 data-t="title">Ziņot par ietvi</h1>
+    <p class="lead" data-t="lead">Nofotografē vietu tagad. Foto un tava atrašanās vieta aizies kopā.</p>
+
+    <section id="shoot">
+      <div class="frame" id="frame">
+        <video id="video" playsinline muted autoplay></video>
+        <img id="preview" alt="" hidden>
+        <div class="msg" id="cam-msg" data-t="cam_starting">Atver kameru…</div>
+        <button class="shutter" id="shutter" type="button" aria-label="Take photo" hidden></button>
+      </div>
+      <div class="row" id="cam-row" hidden>
+        <button class="btn ghost" id="cam-retry" type="button" data-t="cam_retry">Atvērt kameru vēlreiz</button>
+      </div>
+      <div id="place" hidden>
+        <div class="place-h" data-t="place_h">Vai punkts ir pareizajā vietā?</div>
+        <div id="pmap" role="application" aria-label="Map"></div>
+        <p class="small" id="place-note"></p>
+      </div>
+      <div class="loc" id="loc" data-t="loc_wait">Nosaka atrašanās vietu…</div>
+      <div class="row" id="loc-row" hidden>
+        <button class="btn ghost" id="loc-retry" type="button" data-t="loc_retry">Noteikt vietu vēlreiz</button>
+      </div>
+      <div class="row" id="after-shot" hidden>
+        <button class="btn ghost" id="retake" type="button" data-t="retake">Pārņemt</button>
+        <button class="btn" id="send" type="button" data-t="send">Nosūtīt</button>
+      </div>
+    </section>
+
+    <section id="done" hidden>
+      <div class="result">
+        <div class="mark" id="res-icon" aria-hidden="true"></div>
+        <div id="res-text"></div>
+        <div class="ticket" id="res-ticket"></div>
+      </div>
+      <div class="row">
+        <button class="btn" id="again" type="button" data-t="again" hidden>Fotografēt vēlreiz</button>
+        <button class="btn ghost" id="close" type="button" data-t="close">Aizvērt</button>
+      </div>
+    </section>
+
+    <p class="small" data-t="privacy">Foto tiek uzņemts tikai šeit, galerija netiek izmantota. Atrašanās vietu ņemam tikai šim ziņojumam.</p>
+    <p class="note" data-t="proto_note">Prototips, izveidots RobotHack 2026. Nav nevienas iestādes oficiāls pakalpojums.</p>
+    <p class="diag" id="diag"></p>
+  </main>
+  <script src="/assets/vendor/leaflet/leaflet.js"></script>
+  <script src="/assets/js/tg.js"></script>
+</body>
+</html>

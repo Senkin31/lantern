@@ -4,8 +4,12 @@ Run from the repo root:  uvicorn app.main:app --port 8000
 """
 import asyncio
 import contextlib
+import gzip
+import hashlib
+import json
 import secrets
 from pathlib import Path
+from urllib.parse import quote
 from typing import Literal, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
@@ -14,11 +18,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import analyze as analyze_mod
+from . import auth
 from . import evidence as evidence_mod
+from . import tgapp
 from .config import settings
 from .db import Database
 from .engine import LOCATION_SOURCES, PASSABLE, PLACE_TYPES, REPORT_HAZARDS, Engine, RuleError
-from .registry import Registry
+from .registry import Registry, haversine_m
 from .segments import Sidewalks
 from .spam import SpamGuard, photo_hashes
 from .timeutil import clock, fmt_ts, parse_ts
@@ -62,6 +68,32 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
                   description="Winter sidewalk alerts for Riga: camera signals + resident reports.")
     app.state.engine, app.state.views, app.state.db, app.state.guard = engine, views, db, guard
 
+    @app.middleware("http")
+    async def gate(request: Request, call_next):
+        """Who may reach what (see app/auth.py and app/tgapp.py):
+        - the Mini App page, its assets and pass-checked upload, /health and the login page: anyone;
+        - logged in (session cookie): everything, also through the public link;
+        - no LANTERN_PASSWORD set: as before (local: everything, public link: Mini App only);
+        - otherwise pages go to the login page, and the API answers 401 unless the caller is a
+          machine on this computer (bot, camera worker, demo script) or sends INTERNAL_API_KEY."""
+        path = request.url.path
+        proxied = tgapp.proxied(request.headers)
+        if tgapp.public_path(path) or path in auth.OPEN:
+            return await call_next(request)
+        if auth.valid_session(request.cookies.get(auth.COOKIE)):
+            return await call_next(request)
+        if not auth.enabled():
+            if proxied:
+                return PlainTextResponse("Not Found", status_code=404)
+            return await call_next(request)
+        if path in auth.PAGES or path.endswith("/evidence"):
+            target = path + ("?" + request.url.query if request.url.query else "")
+            return RedirectResponse("/login?next=" + quote(target, safe=""), status_code=303)
+        host = request.client.host if request.client else None
+        if guard.trusted(None if proxied else host, request.headers.get("x-lantern-key")):
+            return await call_next(request)
+        return JSONResponse({"detail": "login required"}, status_code=401)
+
     # ------------------------------------------------------------------ static
     app.mount("/assets", StaticFiles(directory=STATIC), name="assets")
     if settings.mock_dir.is_dir():
@@ -87,6 +119,41 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
     def report_page():
         return page("report.html")
 
+    @app.get("/tg", include_in_schema=False)
+    def telegram_app_page():
+        return page("tg.html")
+
+    # ------------------------------------------------------------------ login
+    @app.get("/login", include_in_schema=False)
+    def login_form(request: Request, next: Optional[str] = None):
+        if not auth.enabled() or auth.valid_session(request.cookies.get(auth.COOKIE)):
+            return RedirectResponse(auth.safe_next(next), status_code=303)
+        return HTMLResponse(auth.login_page(next or "/inspector"), headers={"Cache-Control": "no-store"})
+
+    @app.post("/login", include_in_schema=False)
+    def login_submit(request: Request, username: str = Form(""), password: str = Form(""),
+                     next: str = Form("/inspector")):
+        if not auth.enabled():
+            return RedirectResponse(auth.safe_next(next), status_code=303)
+        addr = tgapp.client_ip(request.headers, request.client.host if request.client else None) or "-"
+        if auth.too_many_fails(addr):
+            return HTMLResponse(auth.login_page(next, "Pārāk daudz mēģinājumu, pagaidi 15 min / "
+                                                      "Too many tries, wait 15 minutes"), status_code=429)
+        if not auth.check_login(username, password):
+            auth.failed(addr)
+            return HTMLResponse(auth.login_page(next, "Nepareizs lietotājs vai parole / Wrong username or password"),
+                                status_code=401)
+        resp = RedirectResponse(auth.safe_next(next), status_code=303)
+        resp.set_cookie(auth.COOKIE, auth.make_session(), max_age=auth.SESSION_HOURS * 3600, httponly=True,
+                        samesite="lax", secure=tgapp.proxied(request.headers))
+        return resp
+
+    @app.get("/logout", include_in_schema=False)
+    def logout():
+        resp = RedirectResponse("/login", status_code=303)
+        resp.delete_cookie(auth.COOKIE)
+        return resp
+
     # ------------------------------------------------------------------ meta
     @app.get("/health")
     def health():
@@ -103,6 +170,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
             "images_credit": settings.images_credit,
             "source_url": settings.source_url,
             "analyze_connected": bool(settings.analyze_url),
+            "login": auth.enabled(),
             "settings": engine.runtime_view(),
             "enums": {"passable": PASSABLE, "hazard": REPORT_HAZARDS, "place_type": PLACE_TYPES},
         }
@@ -130,43 +198,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         return {"alert_id": engine.ingest_signal(sig.model_dump())}
 
     # ------------------------------------------------------------------ resident -> app
-    @app.post("/reports", status_code=201, tags=["resident"])
-    async def post_report(
-        request: Request, response: Response,
-        photo: UploadFile = File(...),
-        lat: float = Form(..., ge=-90, le=90),
-        lon: float = Form(..., ge=-180, le=180),
-        passable: Optional[str] = Form(None),  # no longer asked: the model's verdict fills it
-        hazard: Optional[str] = Form(None),
-        place_type: Optional[str] = Form(None),
-        comment: Optional[str] = Form(None),
-        device_id: Optional[str] = Form(None),
-        timestamp: Optional[str] = Form(None),
-        channel: Optional[str] = Form(None),
-        registration_no: Optional[str] = Form(None),
-        location_source: Optional[str] = Form(None),  # gps | pin | typed | map (missing: trusted API caller)
-    ):
-        passable = passable or None
-        if passable is not None and passable not in PASSABLE:
-            raise HTTPException(422, f"passable must be one of {PASSABLE}")
-        hazard = hazard or None
-        place_type = place_type or None
-        if hazard is not None and hazard not in REPORT_HAZARDS:
-            raise HTTPException(422, f"hazard must be one of {REPORT_HAZARDS}")
-        if place_type is not None and place_type not in PLACE_TYPES:
-            raise HTTPException(422, f"place_type must be one of {PLACE_TYPES}")
-        registration_no = (registration_no or "").strip()[:40] or None
-        location_source = location_source or None
-        if location_source is not None and location_source not in LOCATION_SOURCES:
-            raise HTTPException(422, f"location_source must be one of {LOCATION_SOURCES}")
-        comment = (comment or "").strip()
-        if len(comment) > 200:
-            raise HTTPException(422, "comment is limited to 200 characters")
-        if timestamp:
-            try:
-                parse_ts(timestamp)
-            except ValueError:
-                raise HTTPException(422, "timestamp must be ISO 8601 UTC")
+    async def read_photo(photo: UploadFile) -> tuple:
         data = await photo.read(MAX_PHOTO_BYTES + 1)
         if not data:
             raise HTTPException(422, "photo is required")
@@ -175,21 +207,18 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         ctype = (photo.content_type or "").lower()
         if ctype not in IMAGE_TYPES:
             raise HTTPException(415, "photo must be a JPEG, PNG, WebP or HEIC image")
+        return data, ctype
 
-        # --- who is sending: only trusted callers (bot / replay on this machine, or INTERNAL_API_KEY)
-        # may name their own device_id; web users always get the random cookie id.
-        host = request.client.host if request.client else None
-        trusted = guard.trusted(host, request.headers.get("x-lantern-key"))
-        cookie = request.cookies.get(DEVICE_COOKIE)
-        if device_id and trusted:
-            device = device_id.strip()[:64]
-        else:
-            device = cookie or secrets.token_hex(8)
-            if not cookie:
-                response.set_cookie(DEVICE_COOKIE, device, max_age=3600 * 24 * 365, httponly=True, samesite="lax")
-        ip_h = guard.ip_hash(host)
+    def sender_ip(request: Request) -> Optional[str]:
+        return tgapp.client_ip(request.headers, request.client.host if request.client else None)
 
-        # --- spam checks, all before the photo is sent to /analyze (see app/spam.py)
+    async def take(*, data: bytes, ctype: str, filename: Optional[str], lat: float, lon: float, device: str,
+                   ip_h: str, trusted: bool, chan: str, comment: str = "", passable: Optional[str] = None,
+                   hazard: Optional[str] = None, place_type: Optional[str] = None,
+                   location_source: Optional[str] = None, timestamp: Optional[str] = None,
+                   registration_no: Optional[str] = None, capture: Optional[str] = None,
+                   gps: Optional[tuple] = None) -> dict:
+        """Spam checks, /analyze, storing: shared by the web form, the bot and the Telegram Mini App."""
         refused = guard.check(device, ip_h, trusted)
         if refused:
             guard.event(device, ip_h, refused["reason"])
@@ -216,7 +245,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         else:
             analysis = await asyncio.to_thread(
                 analyze_mod.analyze, settings.analyze_url, settings.analyze_timeout, data,
-                photo.filename or "photo", ctype, comment)
+                filename or "photo", ctype, comment)
         if name is None:
             name = f"{fmt_ts(clock.now()).replace(':', '').replace('-', '')}_{secrets.token_hex(4)}{IMAGE_TYPES[ctype]}"
             (settings.upload_dir / name).write_bytes(data)
@@ -228,18 +257,116 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
             passable = {"accept": "no", "reject": "yes"}.get(analysis.get("relevant"), "partly")
         if hazard is None and analysis.get("relevant") != "reject":
             hazard = {"snow": "snow", "blocked": "snow", "ice": "ice", "icicles": "icicles"}.get(analysis.get("hint"))
-        chan = channel if channel in ("web", "telegram", "whatsapp", "replay") else ("replay" if device_id else "web")
         rep = engine.ingest_report(
             {"lat": lat, "lon": lon, "passable": passable, "passable_by": passable_by, "hazard": hazard,
-             "place_type": place_type, "loc_source": location_source,
-             "comment": comment, "device_id": device, "timestamp": timestamp}, analysis, name, chan,
+             "place_type": place_type, "loc_source": location_source, "capture": capture,
+             "comment": comment, "device_id": device, "timestamp": timestamp,
+             "gps_lat": gps[0] if gps else None, "gps_lon": gps[1] if gps else None,
+             "pin_moved_m": gps[2] if gps else None}, analysis, name, chan,
             photo_sha256=sha, photo_dhash=dhash, ip_hash=ip_h, reuse_of=reuse_of, registration_no=registration_no)
         if rep["relevant"] == "reject" or rep["duplicate"] or rep["reuse_of"]:
             guard.strike(device)  # repeated rejects/duplicates -> sender muted for a day
-        return {"report_id": rep["id"], "ticket": rep["ticket"], "relevant": rep["relevant"],
+        return {"report_id": rep["id"], "ticket": None if rep["relevant"] == "reject" else rep["ticket"],
+                "relevant": rep["relevant"],
                 "alert_id": rep["alert_id"], "duplicate": bool(rep["duplicate"]),
                 "same_photo": rep["reuse_of"] is not None,
                 "ai_hint": rep["ai_hint"], "ai_note": rep["ai_note"]}
+
+    @app.post("/reports", status_code=201, tags=["resident"])
+    async def post_report(
+        request: Request, response: Response,
+        photo: UploadFile = File(...),
+        lat: float = Form(..., ge=-90, le=90),
+        lon: float = Form(..., ge=-180, le=180),
+        passable: Optional[str] = Form(None),  # no longer asked: the model's verdict fills it
+        hazard: Optional[str] = Form(None),
+        place_type: Optional[str] = Form(None),
+        comment: Optional[str] = Form(None),
+        device_id: Optional[str] = Form(None),
+        timestamp: Optional[str] = Form(None),
+        channel: Optional[str] = Form(None),
+        registration_no: Optional[str] = Form(None),
+        location_source: Optional[str] = Form(None),  # gps | pin | typed | map | coarse (missing: trusted caller)
+    ):
+        passable = passable or None
+        if passable is not None and passable not in PASSABLE:
+            raise HTTPException(422, f"passable must be one of {PASSABLE}")
+        hazard = hazard or None
+        place_type = place_type or None
+        if hazard is not None and hazard not in REPORT_HAZARDS:
+            raise HTTPException(422, f"hazard must be one of {REPORT_HAZARDS}")
+        if place_type is not None and place_type not in PLACE_TYPES:
+            raise HTTPException(422, f"place_type must be one of {PLACE_TYPES}")
+        registration_no = (registration_no or "").strip()[:40] or None
+        location_source = location_source or None
+        if location_source is not None and location_source not in LOCATION_SOURCES:
+            raise HTTPException(422, f"location_source must be one of {LOCATION_SOURCES}")
+        comment = (comment or "").strip()
+        if len(comment) > 200:
+            raise HTTPException(422, "comment is limited to 200 characters")
+        if timestamp:
+            try:
+                parse_ts(timestamp)
+            except ValueError:
+                raise HTTPException(422, "timestamp must be ISO 8601 UTC")
+        data, ctype = await read_photo(photo)
+
+        # --- who is sending: only trusted callers (bot / replay on this machine, or INTERNAL_API_KEY)
+        # may name their own device_id; web users always get the random cookie id. A request that came
+        # through the public tunnel is never trusted by address, even though it arrives from 127.0.0.1.
+        host = sender_ip(request)
+        trusted = guard.trusted(None if tgapp.proxied(request.headers) else host, request.headers.get("x-lantern-key"))
+        cookie = request.cookies.get(DEVICE_COOKIE)
+        if device_id and trusted:
+            device = device_id.strip()[:64]
+        else:
+            device = cookie or secrets.token_hex(8)
+            if not cookie:
+                response.set_cookie(DEVICE_COOKIE, device, max_age=3600 * 24 * 365, httponly=True, samesite="lax")
+        chan = channel if channel in ("web", "telegram", "whatsapp", "replay") else ("replay" if device_id else "web")
+        return await take(data=data, ctype=ctype, filename=photo.filename, lat=lat, lon=lon, device=device,
+                          ip_h=guard.ip_hash(host), trusted=trusted, chan=chan, comment=comment, passable=passable,
+                          hazard=hazard, place_type=place_type, location_source=location_source,
+                          timestamp=timestamp, registration_no=registration_no)
+
+    @app.post("/reports/app", status_code=201, tags=["resident"])
+    async def post_app_report(
+        request: Request,
+        photo: UploadFile = File(...),
+        lat: float = Form(..., ge=-90, le=90),
+        lon: float = Form(..., ge=-180, le=180),
+        accuracy: Optional[float] = Form(None, ge=0),  # metres, from the phone
+        capture: str = Form("live"),                    # live: the app's own camera (the only kind taken)
+        tg_pass: str = Form(...),
+        gps_lat: Optional[float] = Form(None, ge=-90, le=90),    # the phone's own fix, when lat/lon is a pin
+        gps_lon: Optional[float] = Form(None, ge=-180, le=180),  # the resident moved on the preview map
+    ):
+        """Telegram Mini App: the photo was taken in the app just now, the place is the phone's position.
+        The sender is the person the bot signed the pass for; time is the server's, not the phone's.
+        On the preview map the resident may move the pin up to PIN_MOVE_M from the phone's fix (gps_lat,
+        gps_lon); a pin further away is refused. Both points are kept and the inspector sees the move."""
+        device = tgapp.check_pass(tg_pass)
+        if device is None:
+            raise HTTPException(403, detail={"code": "bad_pass", "message": "open the form again from the Lantern bot"})
+        if capture != "live":  # no live camera, no report: no file dialog, no gallery
+            raise HTTPException(422, detail={"code": "live_only",
+                                             "message": "only a photo taken now in the app's camera is accepted"})
+        if (gps_lat is None) != (gps_lon is None):
+            raise HTTPException(422, detail={"code": "bad_fix", "message": "send gps_lat and gps_lon together"})
+        gps = None
+        if gps_lat is not None:
+            moved = haversine_m(gps_lat, gps_lon, lat, lon)
+            # 1.5 m of slack: the map and this formula round a little differently
+            if moved > settings.pin_move_m + 1.5:
+                raise HTTPException(422, detail={"code": "moved_too_far",
+                                                 "message": f"the pin may move at most {settings.pin_move_m:g} m"})
+            gps = (gps_lat, gps_lon, round(moved, 1))
+        data, ctype = await read_photo(photo)
+        # a fix worse than GPS_ACCURACY_M (wifi / cell tower guess) does not count as an exact place
+        loc = "gps" if accuracy is not None and accuracy <= settings.gps_accuracy_m else "coarse"
+        return await take(data=data, ctype=ctype, filename=photo.filename, lat=lat, lon=lon, device=device,
+                          ip_h=guard.ip_hash(sender_ip(request)), trusted=False, chan="telegram",
+                          location_source=loc, capture=capture, gps=gps)
 
     @app.get("/reports/ticket/{ticket}", tags=["resident"])
     def ticket_status(ticket: str):
@@ -367,6 +494,23 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
             raise HTTPException(409, str(exc))
         return views.alert(a, body.role, detail=True)
 
+    class WarningIn(BaseModel):
+        role: Literal["inspector"]
+        message: str = Field(..., min_length=1, max_length=500)
+        actor: str = ""
+
+    @app.post("/alerts/{alert_id}/warning", tags=["inspector"])
+    def send_warning(alert_id: int, body: WarningIn):
+        """The inspector writes a warning to the contractor of an open job; the contractor sees it on the
+        job card and it goes to the status history (evidence)."""
+        try:
+            a = engine.send_warning(alert_id, body.message, body.actor)
+        except KeyError:
+            raise HTTPException(404, "unknown alert")
+        except RuleError as exc:
+            raise HTTPException(409, str(exc))
+        return views.alert(a, "inspector", detail=True)
+
     @app.get("/alerts/{alert_id}/evidence", tags=["inspector"], response_class=HTMLResponse)
     def alert_evidence(alert_id: int, role: str = "inspector", format: Literal["html", "json"] = "html",
                        lang: Literal["en", "lv"] = "en"):
@@ -391,6 +535,39 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
             raise HTTPException(403, "inspector only")
         engine.tick()
         return {"source": "osm" if views.sidewalks else "cluster", "sections": views.sections()}
+
+    net_cache: dict = {}
+
+    @app.get("/map/network", tags=["map"])
+    def map_network(request: Request):
+        """The sidewalk network both maps draw first, like Riga's pGIS: every stretch of sidewalk (or street
+        where OpenStreetMap has no sidewalk beside it) and every square, geometry only. It changes only with
+        config/riga_sidewalks.geojson, so it is built once and sent gzipped."""
+        if "plain" not in net_cache:
+            sw = views.sidewalks
+            body = {"attribution": (sw.attribution if sw and sw.attribution else "© OpenStreetMap contributors, ODbL"),
+                    "source": sw.source if sw else "osm",  # the legend names pGIS only when the lines are pGIS
+                    "blocks": sw.network() if sw else []}
+            net_cache["plain"] = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            net_cache["gzip"] = gzip.compress(net_cache["plain"], 6)
+            net_cache["etag"] = '"' + hashlib.sha1(net_cache["plain"]).hexdigest()[:16] + '"'
+        # the browser keeps it but asks each time (304 when unchanged), so a new sidewalk file shows at once
+        if request.headers.get("if-none-match") == net_cache["etag"]:
+            return Response(status_code=304, headers={"ETag": net_cache["etag"]})
+        gz = "gzip" in (request.headers.get("accept-encoding") or "")
+        headers = {"Cache-Control": "private, no-cache", "Vary": "Accept-Encoding", "ETag": net_cache["etag"]}
+        if gz:
+            headers["Content-Encoding"] = "gzip"
+        return Response(net_cache["gzip" if gz else "plain"], media_type="application/json", headers=headers)
+
+    @app.get("/map/status", tags=["map"])
+    def map_status(role: str = "inspector", district: Optional[str] = None, contractor: Optional[str] = None):
+        """The colour of each stretch: the state of its latest alert - registered (open, reopened),
+        started (watch, done_reported), finished (verified, cleared_in_time); a stretch not listed has no
+        task (blue). Plus every alert's dot on its line. A contractor gets only their own jobs."""
+        districts = _role_scope(role, district, contractor)
+        engine.tick()
+        return views.network_status(role, districts)
 
     @app.get("/inspection/today", tags=["inspector"])
     def inspection_today(limit: int = Query(10, ge=1, le=100)):

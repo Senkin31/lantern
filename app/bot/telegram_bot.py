@@ -10,8 +10,22 @@ Needs TELEGRAM_BOT_TOKEN (from @BotFather) and LANTERN_API_URL in .env.
 
 Privacy: the server only gets device_id = sha256(salt + telegram user id)[:16]. The raw
 Telegram id and chat id stay in the bot's local state file (data/bot_state.json).
+
+Mini App mode (WEBAPP_URL set to the public https address of the Lantern server): instead of
+taking photos from the chat, which can come from the gallery, the bot shows a "Report" button
+that opens /tg inside Telegram. That page takes the photo with the live camera and sends the
+phone's own position; the button URL carries a signed pass for this person (app/tgapp.py).
+When the page is done it hands the ticket back (web_app_data) and the bot follows it as usual.
+
+Private mode (a team login: BOT_USER / BOT_PASSWORD, by default the web app's LANTERN_USER /
+LANTERN_PASSWORD; optionally TELEGRAM_ALLOWED_USERS = ids that skip the login): everybody has to
+log in. After /start the bot asks for the login, then the password, and deletes both answers from
+the chat. On success it remembers the Telegram id in data/bot_state.json; "/logout" undoes it.
+5 wrong tries in an hour -> wait. People not logged in get no buttons, no Mini App pass and no
+command menu, and nothing about them is stored.
 """
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -27,7 +41,8 @@ from typing import Optional
 import httpx
 
 from ..config import ROOT, env
-from .i18n import LANG_NAMES, LANGS, t
+from ..tgapp import make_pass
+from .i18n import DROPPED_LANGS, LANG_NAMES, LANGS, t
 
 log = logging.getLogger("lantern.bot")
 
@@ -60,6 +75,18 @@ def coords_from_text(text: str) -> Optional[tuple]:
                 return lat, lon
     return None
 TRACK_DAYS = 7
+# the text buttons under the message field send their label; treat them as the commands
+BUTTON_COMMANDS = {t(key, L): cmd for key, cmd in (("btn_status", "/status"), ("btn_lang", "/lang"),
+                                                    ("btn_help", "/help")) for L in LANGS}
+# chats that still show the old Russian button bar (until the bot sends them the new one)
+BUTTON_COMMANDS.update({"📋 Мои заявки": "/status", "🌐 Язык": "/lang", "❓ Помощь": "/help"})
+
+
+def known_lang(code) -> str:
+    """The chat's language if the bot still speaks it. Chats that had Russian get English."""
+    if code in LANGS:
+        return code
+    return "en" if code else "lv"
 STATUS_EVERY = 30.0
 NOTIFY_STATUSES = ("open", "done_reported", "reopened", "verified", "cleared_in_time")
 
@@ -144,10 +171,18 @@ class State:
 
 
 class LanternBot:
-    def __init__(self, telegram: Telegram, api: httpx.Client, state: State):
+    def __init__(self, telegram: Telegram, api: httpx.Client, state: State, webapp_url: str = "",
+                 allowed: Optional[set] = None, password: str = "", login_user: str = "lantern"):
         self.tg = telegram
         self.api = api
         self.state = state
+        self.webapp_url = (webapp_url or "").rstrip("/")
+        self.allowed = set(allowed or ())  # Telegram user ids from .env
+        self.password = password or ""     # team login + password, asked after /start
+        self.login_user = login_user or "lantern"
+        self.private = bool(self.allowed or self.password)
+        self.login_fails: dict = {}        # user id -> recent wrong tries (memory only)
+        self.login_steps: dict = {}        # user id -> where they are in the login (memory only)
         self.drafts: dict = {}  # chat_id -> in-progress report (in memory only)
         self.last_status_check = 0.0
 
@@ -156,7 +191,7 @@ class LanternBot:
         return hashlib.sha256(f"{self.state.salt}:{user_id}".encode()).hexdigest()[:16]
 
     def lang(self, chat_id) -> str:
-        return self.state.chat(chat_id).get("lang") or "lv"
+        return known_lang(self.state.chat(chat_id).get("lang"))
 
     def send(self, chat_id, text: str, markup: Optional[dict] = None) -> None:
         params = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
@@ -175,9 +210,28 @@ class LanternBot:
         self.send(chat_id, t("choose_lang", "en"),
                   self.inline([[(LANG_NAMES[c], f"lang:{c}") for c in LANGS]]))
 
+    def app_on(self) -> bool:
+        return bool(self.webapp_url) and make_pass("probe") is not None
+
+    def main_markup(self, chat_id) -> dict:
+        """The buttons that always sit under the message field: 📸 Report (opens the Mini App with a fresh
+        signed pass, when it is on), then My reports / Language / Help. In a private chat the chat id is
+        the person's Telegram id."""
+        L = self.lang(chat_id)
+        rows = []
+        if self.app_on():
+            url = f"{self.webapp_url}/tg?t={make_pass(self.device_id(chat_id))}&lang={L}"
+            rows.append([{"text": t("btn_app", L), "web_app": {"url": url}}])
+        rows.append([{"text": t("btn_status", L)}, {"text": t("btn_lang", L)}, {"text": t("btn_help", L)}])
+        return {"keyboard": rows, "resize_keyboard": True, "is_persistent": True}
+
     def ask_photo(self, chat_id) -> None:
+        if self.app_on():  # photos come only from the app's live camera
+            self.drafts.pop(chat_id, None)
+            self.send(chat_id, t("ask_app", self.lang(chat_id)), self.main_markup(chat_id))
+            return
         self.drafts[chat_id] = {"step": "photo"}
-        self.send(chat_id, t("ask_photo", self.lang(chat_id)), {"remove_keyboard": True})
+        self.send(chat_id, t("ask_photo", self.lang(chat_id)), self.main_markup(chat_id))
 
     def ask_location(self, chat_id) -> None:
         L = self.lang(chat_id)
@@ -194,8 +248,99 @@ class LanternBot:
         self.send(chat_id, text, self.inline([[(t("btn_send", L), "ok:send"), (t("btn_cancel", L), "ok:cancel")]]))
 
     # ------------------------------------------------------------------ updates
+    def logged_in(self) -> set:
+        return set(self.state.data.get("allowed_users") or [])
+
+    def let_in(self, user_id) -> bool:
+        return not self.private or user_id in self.allowed or user_id in self.logged_in()
+
+    @staticmethod
+    def _their_lang(msg: dict) -> str:
+        code = ((msg.get("from") or {}).get("language_code") or "")[:2].lower()
+        return code if code in LANGS else "en"
+
+    def _delete(self, msg: dict) -> None:
+        try:  # never leave a login or password in the chat
+            self.tg.call("deleteMessage", chat_id=msg["chat"]["id"], message_id=msg.get("message_id"))
+        except (TelegramError, httpx.HTTPError):
+            pass
+
+    def login_flow(self, msg: dict) -> None:
+        """Someone not logged in: /start (or anything) -> "Enter login" -> "Enter password" -> in.
+        Both answers are deleted from the chat. Nothing is stored until the login succeeds."""
+        chat_id, user_id = msg["chat"]["id"], (msg.get("from") or {}).get("id")
+        L = self._their_lang(msg)
+        text = (msg.get("text") or "").strip()
+        cmd = text.split(" ")[0].split("@")[0].lower() if text.startswith("/") else ""
+        step = self.login_steps.get(user_id)
+        if cmd in ("/start", "/login") or step is None or not text:
+            self.login_steps[user_id] = {"step": "user"}
+            self.send(chat_id, t("login_intro", L) + "\n\n" + t("ask_login", L), {"remove_keyboard": True})
+            return
+        self._delete(msg)
+        if step["step"] == "user":
+            self.login_steps[user_id] = {"step": "pass", "user": text}
+            self.send(chat_id, t("ask_password", L))
+            return
+        self.login_steps.pop(user_id, None)
+        now = time.time()
+        fails = [x for x in self.login_fails.get(user_id, []) if x > now - 3600]
+        self.login_fails[user_id] = fails
+        if len(fails) >= 5:
+            self.send(chat_id, t("login_wait", L))
+            return
+        ok_user = hmac.compare_digest(step["user"].lower().encode(), self.login_user.lower().encode())
+        ok_pass = hmac.compare_digest(text.encode(), self.password.encode())
+        if not (ok_user and ok_pass):
+            fails.append(now)
+            self.login_steps[user_id] = {"step": "user"}
+            self.send(chat_id, t("login_bad", L) + "\n\n" + t("ask_login", L))
+            log.info("wrong bot login")
+            return
+        self.state.data["allowed_users"] = sorted(self.logged_in() | {user_id})
+        self.state.save()
+        self.login_fails.pop(user_id, None)
+        self.set_menu(user_id)
+        log.info("a Telegram account logged in to the bot")
+        self.send(chat_id, t("login_ok", L))
+        if self.state.chat(chat_id).get("lang"):
+            self.send(chat_id, t("welcome_app" if self.app_on() else "welcome", self.lang(chat_id)))
+            self.ask_photo(chat_id)
+        else:
+            self.drafts[chat_id] = {"step": "lang"}
+            self.ask_lang(chat_id)
+
+    def turn_away(self, update: dict) -> bool:
+        """Private mode: True for anyone not logged in. With a login set they are walked through it;
+        without one they are told the bot is private. No buttons, no Mini App pass for them."""
+        if not self.private:
+            return False
+        if "callback_query" in update:
+            cb = update["callback_query"]
+            if self.let_in((cb.get("from") or {}).get("id")):
+                return False
+            try:
+                self.tg.call("answerCallbackQuery", callback_query_id=cb["id"], text=t("private", "en"))
+            except (TelegramError, httpx.HTTPError):
+                pass
+            log.info("ignored a button press from someone not logged in")
+            return True
+        msg = update.get("message") or {}
+        if not msg or self.let_in((msg.get("from") or {}).get("id")):
+            return False
+        if (msg.get("chat") or {}).get("type", "private") != "private":
+            return True
+        if self.password:
+            self.login_flow(msg)
+        else:
+            self.send(msg["chat"]["id"], t("private", "en"), {"remove_keyboard": True})
+            log.info("ignored a message from someone not allowed")
+        return True
+
     def handle_update(self, update: dict) -> None:
         try:
+            if self.turn_away(update):
+                return
             if "callback_query" in update:
                 self.on_callback(update["callback_query"])
             elif "message" in update:
@@ -210,6 +355,7 @@ class LanternBot:
         user_id = (msg.get("from") or {}).get("id", chat_id)
         text = (msg.get("text") or "").strip()
         chat = self.state.chat(chat_id)
+        text = BUTTON_COMMANDS.get(text, text)  # "📋 My reports" -> /status, etc.
         if text.startswith("/"):
             cmd = text.split()[0].split("@")[0].lower()
             if cmd == "/start":
@@ -217,18 +363,27 @@ class LanternBot:
                     self.drafts[chat_id] = {"step": "lang"}
                     self.ask_lang(chat_id)
                 else:
-                    self.send(chat_id, t("welcome", self.lang(chat_id)))
+                    self.send(chat_id, t("welcome_app" if self.app_on() else "welcome", self.lang(chat_id)))
                     self.ask_photo(chat_id)
             elif cmd == "/lang":
                 self.drafts.setdefault(chat_id, {"step": "idle"})
                 self.ask_lang(chat_id)
             elif cmd == "/cancel":
                 self.drafts.pop(chat_id, None)
-                self.send(chat_id, t("cancelled", self.lang(chat_id)), {"remove_keyboard": True})
+                self.send(chat_id, t("cancelled", self.lang(chat_id)), self.main_markup(chat_id))
             elif cmd == "/status":
                 self.show_status(chat_id)
+            elif cmd == "/login":
+                self.send(chat_id, t("login_already", self.lang(chat_id)), self.main_markup(chat_id))
+            elif cmd == "/logout" and self.private:
+                self.state.data["allowed_users"] = sorted(self.logged_in() - {user_id})
+                self.state.data["chats"].pop(str(chat_id), None)
+                self.drafts.pop(chat_id, None)
+                self.state.save()
+                self.send(chat_id, t("logout_ok", "en"), {"remove_keyboard": True})
             else:
-                self.send(chat_id, t("help", self.lang(chat_id)))
+                self.send(chat_id, t("help_app" if self.app_on() else "help", self.lang(chat_id)),
+                          self.main_markup(chat_id))
             return
 
         if not chat.get("lang"):
@@ -236,7 +391,14 @@ class LanternBot:
             chat["lang"] = "lv"
             self.state.save()
 
+        if msg.get("web_app_data"):
+            self.on_app_data(chat_id, msg["web_app_data"].get("data"))
+            return
         file_id, mime = self._photo_of(msg)
+        if self.app_on() and (file_id or msg.get("location") or msg.get("venue")):
+            # a chat photo may be old or from the gallery: point to the app's live camera instead
+            self.send(chat_id, t("use_app", self.lang(chat_id)), self.main_markup(chat_id))
+            return
         if file_id:
             self.on_photo(chat_id, user_id, file_id, mime)
             return
@@ -263,7 +425,7 @@ class LanternBot:
             self.send(chat_id, t("use_buttons", L))
         else:
             if not draft:
-                self.send(chat_id, t("welcome", L))
+                self.send(chat_id, t("welcome_app" if self.app_on() else "welcome", L))
             self.ask_photo(chat_id)
 
     @staticmethod
@@ -317,7 +479,7 @@ class LanternBot:
             self.state.save()
             reask = {"photo": self.ask_photo, "location": self.ask_location, "confirm": self.ask_confirm}
             if first or step not in reask:
-                self.send(chat_id, t("welcome", value))
+                self.send(chat_id, t("welcome_app" if self.app_on() else "welcome", value))
                 self.ask_photo(chat_id)
             else:
                 reask[step](chat_id)  # continue the report in the new language
@@ -327,8 +489,51 @@ class LanternBot:
                 self.submit(chat_id)
             else:
                 self.drafts.pop(chat_id, None)
-                self.send(chat_id, t("cancelled", self.lang(chat_id)))
+                self.send(chat_id, t("cancelled", self.lang(chat_id)), self.main_markup(chat_id))
         # stale buttons from an old message are ignored silently
+
+    def setup_profile(self) -> None:
+        """Command menu (the Menu button next to the message field) and the description people see in an
+        empty chat before pressing Start, in every bot language. Failures only log: the bot still works."""
+        cmds = ("start", "status", "lang", "help")
+        private = self.private
+        calls = []
+        for L in (None,) + LANGS:  # None: the default for any other app language
+            code = L or "lv"
+            extra = {"language_code": L} if L else {}
+            menu = [{"command": c, "description": t(f"cmd_{c}", code)} for c in cmds]
+            if private:  # strangers see no menu; the allowed chats get it in their own scope
+                calls.append(("deleteMyCommands", dict(extra)))
+                calls += [("setMyCommands", {"commands": menu, "scope": {"type": "chat", "chat_id": uid}, **extra})
+                          for uid in sorted(self.allowed | self.logged_in())]
+            else:
+                calls.append(("setMyCommands", {"commands": menu, **extra}))
+            calls.append(("setMyDescription", {"description": t("bot_about_private" if private else "bot_about", code),
+                                               **extra}))
+            calls.append(("setMyShortDescription", {"short_description": t("bot_short_private" if private
+                                                                           else "bot_short", code), **extra}))
+        for L in DROPPED_LANGS:  # a language the bot no longer speaks: its own menu and texts go
+            extra = {"language_code": L}
+            calls.append(("deleteMyCommands", dict(extra)))
+            calls += [("deleteMyCommands", {"scope": {"type": "chat", "chat_id": uid}, **extra})
+                      for uid in sorted(self.allowed | self.logged_in())]
+            calls.append(("setMyDescription", {"description": "", **extra}))
+            calls.append(("setMyShortDescription", {"short_description": "", **extra}))
+        for method, params in calls:
+            try:
+                self.tg.call(method, **params)
+            except (TelegramError, httpx.HTTPError) as exc:
+                log.warning("%s failed: %s", method, exc)
+
+    def set_menu(self, user_id) -> None:
+        """Command menu for one allowed chat (private mode hides it from everyone else)."""
+        for L in (None,) + LANGS:
+            extra = {"language_code": L} if L else {}
+            menu = [{"command": c, "description": t(f"cmd_{c}", L or "lv")} for c in ("start", "status", "lang", "help")]
+            try:
+                self.tg.call("setMyCommands", commands=menu, scope={"type": "chat", "chat_id": user_id}, **extra)
+            except (TelegramError, httpx.HTTPError) as exc:
+                log.warning("setMyCommands failed: %s", exc)
 
     # ------------------------------------------------------------------ server
     def submit(self, chat_id) -> None:
@@ -358,25 +563,48 @@ class LanternBot:
             self.send(chat_id, t("send_failed", L))
             return  # draft kept at the confirm step: pressing Send again retries
         self.drafts.pop(chat_id, None)
-        ticket = result["ticket"]
-        rel = result.get("relevant")
+        self.follow(chat_id, result["ticket"], result.get("relevant"), bool(result.get("alert_id")),
+                    bool(result.get("same_photo")))
+        log.info("report %s from chat sent: %s, location from %s", result["ticket"], result.get("relevant"),
+                 d.get("loc_source"))
+
+    def follow(self, chat_id, ticket: str, rel: Optional[str], has_alert: bool, same_photo: bool,
+               markup: Optional[dict] = None) -> None:
+        """Remember the ticket for status pushes and tell the person what the AI decided."""
+        L = self.lang(chat_id)
+        if rel == "reject" or not ticket:  # the AI saw no sidewalk problem: no ticket was created
+            self.send(chat_id, t("rejected", L), markup or self.main_markup(chat_id))
+            return
         chat = self.state.chat(chat_id)
         chat["tickets"].append({"ticket": ticket, "sent_at": _iso(_now()), "relevant": rel,
-                                "alert_status": None, "done": rel == "reject"})
+                                "alert_status": None, "done": False})
         chat["tickets"] = chat["tickets"][-30:]
         self.state.save()
-        if rel == "reject":
-            self.send(chat_id, t("rejected", L, ticket=ticket))
-        elif rel == "review":
-            self.send(chat_id, t("review", L, ticket=ticket))
+        if rel == "review":
+            text = t("review", L, ticket=ticket)
         else:
             text = t("accepted", L, ticket=ticket)
-            if result.get("alert_id") and self._merged(ticket):
+            if has_alert and self._merged(ticket):
                 text += "\n\n" + t("merged", L)
-            if result.get("same_photo"):
+            if same_photo:
                 text += "\n\n" + t("same_photo", L)
-            self.send(chat_id, text)
-        log.info("report %s from chat sent: %s, location from %s", ticket, rel, d.get("loc_source"))
+        self.send(chat_id, text, markup or self.main_markup(chat_id))
+
+    def on_app_data(self, chat_id, raw) -> None:
+        """The Mini App finished: it hands back the ticket. Treat it as a claim and look it up on the server."""
+        try:
+            ticket = str((json.loads(raw or "{}") or {}).get("ticket") or "")
+        except (ValueError, AttributeError):
+            ticket = ""
+        st = self.ticket(ticket) if re.fullmatch(r"[A-Z0-9]{6,12}", ticket) else None
+        if st is None:
+            log.warning("mini app sent an unknown ticket")
+            return
+        if any(x["ticket"] == ticket for x in self.state.chat(chat_id)["tickets"]):
+            return
+        self.follow(chat_id, ticket, st.get("relevant"), bool(st.get("alert_status")), False,
+                    self.main_markup(chat_id))  # fresh pass on the button for the next report
+        log.info("report %s from the mini app: %s", ticket, st.get("relevant"))
 
     def _merged(self, ticket: str) -> bool:
         st = self.ticket(ticket)
@@ -424,7 +652,7 @@ class LanternBot:
         cutoff = _now() - timedelta(days=TRACK_DAYS)
         changed = False
         for chat_id, chat in list(self.state.data["chats"].items()):
-            L = chat.get("lang") or "lv"
+            L = known_lang(chat.get("lang"))
             for item in chat.get("tickets", []):
                 if item.get("done"):
                     continue
@@ -499,7 +727,20 @@ def main() -> None:
     key = env("INTERNAL_API_KEY", "")  # lets the server trust our hashed device ids from another host
     api = httpx.Client(base_url=api_url, headers={"X-Lantern-Key": key} if key else None)
     state = State(ROOT / env("BOT_STATE_FILE", "data/bot_state.json"))
-    LanternBot(tg, api, state).run_forever()
+    webapp = env("WEBAPP_URL", "").strip()
+    if webapp and not webapp.startswith("https://"):
+        log.warning("WEBAPP_URL must be https (Telegram refuses other links); Mini App is off")
+        webapp = ""
+    log.info("mini app: %s", "on" if webapp else "off (photos from the chat)")
+    allowed = {int(x) for x in env("TELEGRAM_ALLOWED_USERS", "").replace(" ", "").split(",") if x.lstrip("-").isdigit()}
+    password = env("BOT_PASSWORD", "") or env("LANTERN_PASSWORD", "")
+    login_user = env("BOT_USER", "") or env("LANTERN_USER", "lantern")
+    bot = LanternBot(tg, api, state, webapp, allowed, password, login_user)
+    log.info("access: %s", "public (anyone)" if not bot.private else
+             f"private: {len(bot.logged_in())} logged in, {len(allowed)} skip the login"
+             + (", everyone else is asked for the login and password" if password else ""))
+    bot.setup_profile()
+    bot.run_forever()
 
 
 if __name__ == "__main__":

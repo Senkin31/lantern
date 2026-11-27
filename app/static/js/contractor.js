@@ -37,9 +37,11 @@
   async function refresh() {
     if (!S.contractor) { $("#main").innerHTML = `<div class="empty">${esc(t("pickContractor"))}</div>`; return; }
     try {
-      const res = await api("/alerts?role=contractor&contractor=" + encodeURIComponent(S.contractor));
+      const who = "role=contractor&contractor=" + encodeURIComponent(S.contractor);
+      const [res, net] = await Promise.all([api("/alerts?" + who), api("/map/status?" + who).catch(() => null)]);
       L$.syncFromSettings(res.settings);
       S.alerts = res.alerts;
+      S.net = net;
       render();
     } catch (e) { console.warn("refresh failed", e); }
   }
@@ -61,9 +63,12 @@
   function geo(a) { return `geo:${a.lat},${a.lon}?q=${a.lat},${a.lon}`; }
 
   function jobHTML(a) {
-    const banner = (a.overdue ? `<div class="banner overdue">⚠ ${esc(t("overdueJob"))}</div>` : "")
-      + (a.status === "reopened" ? `<div class="banner">↻ ${esc(t("redo"))}</div>`
-        : a.status === "done_reported" ? `<div class="banner done">⏳ ${esc(t("waitingCheck"))}</div>` : "");
+    // the inspector's written warnings (newest first) are the first thing on the job
+    const warns = a.status !== "verified" && (a.warnings || []).length ? `<div class="banner warning"><b>${esc(t("warnFromInspector"))}</b>${a.warnings
+      .map((w) => `<div class="warn-line"><span class="when">${esc(L$.fmtTime(w.at))}</span> ${esc(w.message)}</div>`).join("")}</div>` : "";
+    const banner = warns + (a.overdue ? `<div class="banner overdue">${esc(t("overdueJob"))}</div>` : "")
+      + (a.status === "reopened" ? `<div class="banner">${esc(t("redo"))}</div>`
+        : a.status === "done_reported" ? `<div class="banner done">${esc(t("waitingCheck"))}</div>` : "");
     const open = a.status !== "verified";
     const photos = (a.report_photos || []).map((p) => `<img src="${esc(p)}" data-zoom="${esc(p)}" alt="${esc(t("residentPhotos"))}" loading="lazy">`).join("");
     const canClear = a.status === "open" || a.status === "reopened";
@@ -78,19 +83,18 @@
       ${banner}
       <div class="body">
         <div class="top">
-          <div><h2>${esc(L$.place(a.place_type))} · #${a.id}</h2>
-            <div class="muted small">${esc(a.district || "")}${a.hazard_now && a.hazard_now !== "reported" ? ` · ${esc(L$.hazard(a.hazard_now))}` : ""}</div></div>
+          <div><h2>${esc(L$.place(a.place_type))}, ${esc(a.district || "")}</h2>
+            <div class="muted small">${esc(t("caseNo"))} ${a.id}${a.hazard_now && a.hazard_now !== "reported" ? ` · ${esc(L$.hazard(a.hazard_now))}` : ""}</div></div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">${L$.levelBadge(a.urgency_level, a.status)}${L$.statusBadge(a.status)}</div>
         </div>
-        ${open ? `<div class="sev-box">${L$.severityBadge(a)}<span class="muted small">${esc(t(a.severity === "act" ? "actJob" : "noticeJob"))}</span></div>` : ""}
         ${a.latest_crop_url ? `<figure style="margin:0"><img class="crop" src="${esc(a.latest_crop_url)}" data-zoom="${esc(a.latest_crop_url)}" alt="${esc(t("lastFrame"))}" loading="lazy"><figcaption class="muted small">${esc(t("lastFrame"))}</figcaption></figure>` : ""}
         <div class="facts">${facts}</div>
         ${photos ? `<div><div class="muted small" style="margin-bottom:4px">${esc(t("residentPhotos"))}</div><div class="thumbs">${photos}</div></div>` : ""}
         <div class="links">
-          <a class="btn" href="${esc(osm(a))}" target="_blank" rel="noopener">🗺 ${esc(t("openInMap"))}</a>
-          <a class="btn" href="${esc(geo(a))}">➜ ${esc(t("directions"))}</a>
+          <a class="btn" href="${esc(osm(a))}" target="_blank" rel="noopener">${esc(t("openInMap"))}</a>
+          <a class="btn" href="${esc(geo(a))}">${esc(t("directions"))}</a>
         </div>
-        ${canClear ? `<button class="btn primary big" type="button" data-clear="${a.id}" ${S.busy.has(a.id) ? "disabled" : ""}>✓ ${esc(t("cleared"))}</button>` : ""}
+        ${canClear ? `<button class="btn primary big" type="button" data-clear="${a.id}" ${S.busy.has(a.id) ? "disabled" : ""}>${esc(t("cleared"))}</button>` : ""}
       </div>
     </article>`;
   }
@@ -122,15 +126,44 @@
       updateMap(); return;
     }
     S.lastHTML = html;
-    if (S.map) { S.map.remove(); S.map = null; S.layers.clear(); S.fitted = false; }
+    if (S.map) { S.map.remove(); S.map = null; S.network = null; S.layers.clear(); S.fitted = false; }
     $("#main").innerHTML = html;
     L$.updateSince($("#main"));
     bind();
-    if (S.view === "map") { S.map = L$.makeMap($("#cmap"), S.meta); updateMap(); }
+    if (S.view === "map") {
+      S.map = L$.makeMap($("#cmap"), S.meta);
+      // my sidewalks like Riga's pGIS: my jobs' stretches in their task colour, the rest blue
+      S.network = L$.sidewalkNetwork(S.map, { onPick: (st) => openJob(st.alert_id) });
+      S.map.on("zoomend", showDots);
+      S.network.ready.then(() => {
+        const lg = L.control({ position: "bottomleft" });
+        lg.onAdd = () => { const d = L.DomUtil.create("div", "map-legend"); d.innerHTML = S.network ? S.network.legend() : ""; return d; };
+        if (S.map) { lg.addTo(S.map); updateMap(); }
+      });
+      updateMap();
+    }
+  }
+
+  // like the inspector map: from far only the coloured lines, the dots appear when you zoom in
+  function showDots() {
+    if (!S.map) return;
+    const on = S.map.getZoom() >= L$.DOT_ZOOM;
+    S.layers.forEach((l) => {
+      if (on && !S.map.hasLayer(l.marker)) l.marker.addTo(S.map);
+      if (!on && S.map.hasLayer(l.marker)) l.marker.remove();
+    });
+  }
+
+  function openJob(id) {
+    S.view = "list"; S.lastHTML = ""; render();
+    const j = document.getElementById("job-" + id);
+    if (j) j.scrollIntoView({ behavior: "smooth" });
   }
 
   function updateMap() {
     if (!S.map) return;
+    if (S.network && S.net) S.network.setStatus(S.net.blocks);
+    const dotAt = (a) => ((S.net && S.net.points && S.net.points[a.id]) || a.map_point || [a.lat, a.lon]);
     const seen = new Set();
     S.alerts.forEach((a) => {
       seen.add(a.id);
@@ -141,17 +174,18 @@
       let l = S.layers.get(a.id);
       if (!l) {
         l = {};
-        l.marker = L.circleMarker(a.map_point || [a.lat, a.lon], style).addTo(S.map);  // camera jobs sit on the street
-        l.marker.on("click", () => { S.view = "list"; S.lastHTML = ""; render(); const j = document.getElementById("job-" + a.id); if (j) j.scrollIntoView({ behavior: "smooth" }); });
+        l.marker = L.circleMarker(dotAt(a), style);  // every job sits on its sidewalk line (shown close up)
+        l.marker.on("click", () => openJob(a.id));
         S.layers.set(a.id, l);
       } else {
-        l.marker.setStyle(style); l.marker.setRadius(style.radius);
+        l.marker.setStyle(style); l.marker.setRadius(style.radius); l.marker.setLatLng(dotAt(a));
       }
-      l.marker.bindTooltip(`#${a.id} · ${esc(L$.place(a.place_type))} · ${esc(t("st_" + a.status))}`);
+      l.marker.bindTooltip(`${esc(t("caseNo"))} ${a.id} · ${esc(L$.place(a.place_type))} · ${esc(t("st_" + a.status))}`);
     });
     S.layers.forEach((l, id) => { if (!seen.has(id)) { l.marker.remove(); S.layers.delete(id); } });
+    showDots();
     if (!S.fitted) {
-      const pts = S.alerts.map((a) => a.map_point || [a.lat, a.lon]);
+      const pts = S.alerts.map(dotAt);
       if (pts.length) S.map.fitBounds(pts, { padding: [40, 40], maxZoom: 17 });
       else {
         const c = me();

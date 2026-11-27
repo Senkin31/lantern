@@ -3,21 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#14213D">
+  <meta name="theme-color" content="#0b3a6b">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b3a6b'/%3E%3Cpath d='M11 8v16h10' fill='none' stroke='%23fff' stroke-width='3.5'/%3E%3C/svg%3E">
   <title>Lantern — ziņot par ietvi</title>
   <link rel="stylesheet" href="/assets/vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="/assets/css/report.css">
 </head>
 <body>
   <header class="top">
-    <a class="brand" href="/report" aria-label="Lantern">
-      <svg class="brand-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6v2h-1v1.1A6 6 0 0 1 18 11v6a3 3 0 0 1-3 3h-1v2h-4v-2H9a3 3 0 0 1-3-3v-6a6 6 0 0 1 4-5.9V4H9V2Zm3 6.5c-1.2 1.5-2 2.8-2 4a2 2 0 0 0 4 0c0-1.2-.8-2.5-2-4Z"/></svg>
-      <span>Lantern</span>
+    <a class="brand" href="/report">
+      <span class="brand-name">Lantern <span class="proto" data-i18n="proto">Prototips</span></span>
+      <span class="brand-sub" data-i18n="service">Ziņojumi par ietvēm ziemā</span>
     </a>
     <div class="langs" role="group" aria-label="Language">
       <button type="button" data-lang="lv">LV</button>
       <button type="button" data-lang="en">EN</button>
-      <button type="button" data-lang="ru">RU</button>
     </div>
   </header>
 
@@ -94,6 +94,7 @@
   </main>
 
   <footer class="foot">
+    <p class="proto-note" data-i18n="proto_note">Prototips, izveidots RobotHack 2026. Nav nevienas iestādes oficiāls pakalpojums.</p>
     <p data-i18n="note_1201">Lantern papildina tālruni 1201, nevis aizstāj to. Steidzamos gadījumos zvani 1201 vai 112.</p>
     <p data-i18n="privacy">Mēs neprasām vārdu, tālruni vai e-pastu. Foto redz pilsētas inspektors un tīrītāji.</p>
     <p class="links"><a id="source-link" href="https://github.com/Senkin31/lantern" target="_blank" rel="noopener">Source</a> · AGPL-3.0 · <span id="tile-credit"></span></p>

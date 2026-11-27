@@ -2,6 +2,8 @@
 
     python -m app.osm_sidewalks                       # default box: central Riga -> config/riga_sidewalks.geojson
     python -m app.osm_sidewalks --bbox 56.935,24.08,56.975,24.16 --out config/riga_sidewalks.geojson
+    python -m app.osm_sidewalks --crossings          # junctions + crosswalks, all Riga -> config/riga_crossings.json
+    python -m app.osm_sidewalks --streets            # named streets + paths, all Riga -> config/riga_streets.json
 
 The app snaps alerts to these blocks and paints the block on the inspector map (app/segments.py).
 A block = a piece of a way between two junctions, at most MAX_BLOCK_M long.
@@ -11,6 +13,7 @@ Uses only the standard library. Sends nothing but the bounding box to the public
 import argparse
 import json
 import math
+import time
 import urllib.parse
 import urllib.request
 from collections import Counter, defaultdict
@@ -19,9 +22,15 @@ from pathlib import Path
 from .config import ROOT
 
 OVERPASS = "https://overpass-api.de/api/interpreter"
+MIRRORS = [OVERPASS, "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+           "https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter"]
 DEFAULT_BBOX = (56.935, 24.08, 56.975, 24.16)   # south, west, north, east: Old Town, Centrs, around the demo
+RIGA_BBOX = (56.8626, 23.9544, 57.0809, 24.3203)  # all of Riga, the area of the city's pGIS sidewalk map
 MAX_BLOCK_M = 220.0
 STREETS = "pedestrian|living_street|residential|unclassified|tertiary|secondary|primary"
+ROADS = STREETS + "|trunk|motorway|primary_link|secondary_link|tertiary_link|trunk_link|motorway_link"
+PATH_TYPES = {"footway", "path", "cycleway", "steps", "bridleway"}  # named ways that are not streets
+NOT_WAYS = {"platform", "bus_stop", "construction", "proposed", "corridor", "elevator", "raceway", "abandoned"}
 
 
 def query(bbox) -> str:
@@ -95,11 +104,101 @@ def squares(osm: dict) -> tuple:
     return feats, outline_ways
 
 
-def fetch(bbox, q=None) -> dict:
+def fetch(bbox, q=None, url=OVERPASS) -> dict:
     data = urllib.parse.urlencode({"data": q or query(bbox)}).encode()
-    req = urllib.request.Request(OVERPASS, data=data, headers={"User-Agent": "lantern-hackathon-app/0.1"})
+    req = urllib.request.Request(url, data=data, headers={"User-Agent": "sidewalk-map-script/0.1"})
     with urllib.request.urlopen(req, timeout=120) as r:
         return json.load(r)
+
+
+def crossings_query(bbox) -> str:
+    b = ",".join(f"{x:.5f}" for x in bbox)
+    return (f'[out:json][timeout:90];way["highway"~"^({ROADS})$"]({b})->.w;'
+            f'node(way_link.w:3-)->.j;'               # junctions: 3+ road ends meet
+            f'node["highway"="crossing"]({b})->.c;'   # crosswalks
+            f'(.j;.c;);out skel qt;')
+
+
+def streets_query(bbox) -> str:
+    b = ",".join(f"{x:.5f}" for x in bbox)
+    return f'[out:json][timeout:120];way["highway"]["name"]({b});out tags geom;'
+
+
+def _tiled(bbox, tiles: int, make_query):
+    """Elements of every tile of bbox, tile by tile and server by server (the public Overpass servers are
+    often busy). Raises when a tile fails on every server, so no file is ever written with a hole."""
+    s, w, n, e = bbox
+    for iy in range(tiles):
+        for ix in range(tiles):
+            tb = (s + (n - s) * iy / tiles, w + (e - w) * ix / tiles,
+                  s + (n - s) * (iy + 1) / tiles, w + (e - w) * (ix + 1) / tiles)
+            els = None
+            for rnd in range(3):  # all busy: wait and go round again
+                if rnd:
+                    time.sleep(30 * rnd)
+                for url in MIRRORS:
+                    try:
+                        ans = fetch(tb, make_query(tb), url)
+                        if ans.get("remark"):  # a timed-out query still answers 200, with a remark and a hole
+                            raise RuntimeError(ans["remark"][:100])
+                        els = ans.get("elements", [])
+                        break
+                    except Exception as exc:  # busy or down: the next server
+                        print(f"tile {iy},{ix}: {url.split('/')[2]} failed ({exc})", flush=True)
+                if els is not None:
+                    break
+            if els is None:  # the committed file is left as it is
+                raise RuntimeError(f"tile {iy},{ix}: every Overpass server failed, try again later")
+            yield from els
+
+
+def _simplify(pts: list, tol_m: float) -> list:
+    """Douglas-Peucker on [lon, lat] points, tolerance in metres."""
+    if len(pts) < 3:
+        return pts
+    lat0 = math.radians(pts[0][1])
+    xy = [(p[0] * 111_320 * math.cos(lat0), p[1] * 111_320) for p in pts]
+    keep = [False] * len(pts)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(pts) - 1)]
+    while stack:
+        i, j = stack.pop()
+        (ax, ay), (bx, by) = xy[i], xy[j]
+        dx, dy = bx - ax, by - ay
+        L = math.hypot(dx, dy) or 1e-9
+        far, k_far = -1.0, None
+        for k in range(i + 1, j):
+            d = abs(dy * (xy[k][0] - ax) - dx * (xy[k][1] - ay)) / L
+            if d > far:
+                far, k_far = d, k
+        if k_far is not None and far > tol_m:
+            keep[k_far] = True
+            stack += [(i, k_far), (k_far, j)]
+    return [p for p, k in zip(pts, keep) if k]
+
+
+def named_streets(bbox=RIGA_BBOX, tiles: int = 4) -> list:
+    """Every named street and path of Riga as [name, cls, [[lon, lat], ...]], cls "road" or "path":
+    app.pgis_sidewalks names each sidewalk section after the street it runs alongside (the city's own
+    data names many lines only by their district, or not at all)."""
+    ways = {}
+    for el in _tiled(bbox, tiles, streets_query):
+        tags = el.get("tags", {})
+        name, hw = (tags.get("name") or "").strip(), tags.get("highway", "")
+        if el.get("type") != "way" or not name or hw in NOT_WAYS or len(el.get("geometry") or []) < 2:
+            continue
+        pts = _simplify([[g["lon"], g["lat"]] for g in el["geometry"]], 1.0)
+        ways[el["id"]] = [name, "path" if hw in PATH_TYPES else "road", [[round(x, 5), round(y, 5)] for x, y in pts]]
+    return [ways[k] for k in sorted(ways)]
+
+
+def crossings(bbox=RIGA_BBOX, tiles: int = 4) -> list:
+    """Street junctions and crosswalks as [lon, lat]: where app.pgis_sidewalks cuts the sidewalk lines
+    into blocks. All of Riga by default, tile by tile and server by server (the public Overpass servers
+    are often busy)."""
+    pts = {el["id"]: [round(el["lon"], 5), round(el["lat"], 5)]
+           for el in _tiled(bbox, tiles, crossings_query) if "lon" in el}
+    return sorted(pts.values())
 
 
 def _dist_m(a, b) -> float:
@@ -224,12 +323,40 @@ def with_squares(lines: list, square_feats: list, outline_ways: set) -> list:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--bbox", default=",".join(map(str, DEFAULT_BBOX)), help="south,west,north,east")
-    ap.add_argument("--out", default="config/riga_sidewalks.geojson")
+    ap.add_argument("--out", help="default: config/riga_sidewalks.geojson (--crossings: config/riga_crossings.json)")
+    ap.add_argument("--crossings", action="store_true",
+                    help="only download the street junctions + crosswalks of all of Riga (cuts the pGIS lines into blocks)")
+    ap.add_argument("--streets", action="store_true",
+                    help="only download the named streets + paths of all of Riga (names the pGIS sections)")
     ap.add_argument("--keep-paths", action="store_true", help="also keep park and courtyard paths")
     ap.add_argument("--remerge", action="store_true", help="no download: glue the blocks of the existing --out file")
     ap.add_argument("--add-squares", action="store_true", help="add squares (as areas) to the existing --out file")
     ap.add_argument("--squares-json", help="with --add-squares: a saved Overpass answer instead of downloading")
     a = ap.parse_args()
+    if a.streets:
+        out = Path(a.out or "config/riga_streets.json")
+        out = out if out.is_absolute() else ROOT / out
+        ways = named_streets()
+        out.write_text(json.dumps({
+            "attribution": "(c) OpenStreetMap contributors, ODbL 1.0, https://www.openstreetmap.org/copyright",
+            "about": "Named streets and paths of Riga, [name, road|path, [[lon, lat], ...]]: app.pgis_sidewalks "
+                     "names each sidewalk section after the street it runs alongside. "
+                     "Made by: python -m app.osm_sidewalks --streets",
+            "streets": ways}, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        print(f"{len(ways)} named streets and paths -> {out} ({out.stat().st_size / 1024:.0f} KB)")
+        return
+    if a.crossings:
+        out = Path(a.out or "config/riga_crossings.json")
+        out = out if out.is_absolute() else ROOT / out
+        pts = crossings()
+        out.write_text(json.dumps({
+            "attribution": "(c) OpenStreetMap contributors, ODbL 1.0, https://www.openstreetmap.org/copyright",
+            "about": "Street junctions and crosswalks of Riga, [lon, lat]: where app.pgis_sidewalks cuts the "
+                     "sidewalk lines into blocks. Made by: python -m app.osm_sidewalks --crossings",
+            "points": pts}, separators=(",", ":")), encoding="utf-8")
+        print(f"{len(pts)} junctions and crosswalks -> {out} ({out.stat().st_size / 1024:.0f} KB)")
+        return
+    a.out = a.out or "config/riga_sidewalks.geojson"
     bbox = tuple(float(x) for x in a.bbox.split(","))
     out = Path(a.out) if Path(a.out).is_absolute() else ROOT / a.out
     if a.remerge or a.add_squares:

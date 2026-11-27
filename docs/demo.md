@@ -12,7 +12,10 @@ The jury should see one full cycle of the crossing (brief v3): **open → compla
    - **left, large:** http://127.0.0.1:8000/inspector
    - **right, phone-sized** (browser dev tools → device toolbar, or a real phone on the same Wi-Fi): http://127.0.0.1:8000/contractor?contractor=A
 4. Do one dry run with `python -m app.demo --auto-done`. Then press **Reset demo** in the inspector bar.
-5. Optional: start the Telegram bot (`python -m app.bot.telegram_bot`) and keep a phone ready to send a report live.
+5. Optional: start the Telegram bot ([@lantern_riga_bot](https://t.me/lantern_riga_bot)) and keep a phone ready to send a report live.
+   - Start it with `python -m app.bot.telegram_bot`.
+   - Log in on that phone beforehand. The team login is not in the repo.
+   - For the **📸 Report a sidewalk** button: start `cloudflared tunnel --url http://127.0.0.1:8000`, then start the bot with `WEBAPP_URL` set to the new link (it changes on every tunnel start).
 6. Record a screen video of a good run as a fallback.
 
 ## On stage (about 1.5 min at the default speed)

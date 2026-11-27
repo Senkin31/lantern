@@ -6,6 +6,8 @@
   const I18N = {
     lv: {
       page_title: "Lantern — ziņot par ietvi",
+      service: "Ziņojumi par ietvēm ziemā", proto: "Prototips",
+      proto_note: "Prototips, izveidots RobotHack 2026. Nav nevienas iestādes oficiāls pakalpojums.",
       title: "Ziņo par bīstamu ietvi",
       lead: "Foto un vieta — 15 sekundes. Pārējo MI nolasīs no foto.",
       photo_h: "Foto", photo_btn: "Uzņemt vai izvēlēties foto", photo_change: "Mainīt foto",
@@ -53,6 +55,8 @@
     },
     en: {
       page_title: "Lantern — report a sidewalk",
+      service: "Winter sidewalk reports", proto: "Prototype",
+      proto_note: "Prototype made at RobotHack 2026. Not an official service of any authority.",
       title: "Report a dangerous sidewalk",
       lead: "A photo and the place — 15 seconds. The AI reads the rest from the photo.",
       photo_h: "Photo", photo_btn: "Take or choose a photo", photo_change: "Change photo",
@@ -98,53 +102,6 @@
       note_1201: "Lantern complements the 1201 phone line, it does not replace it. In urgent cases call 1201 or 112.",
       privacy: "We never ask for your name, phone or email. The photo is seen by the city inspector and the contractor.",
     },
-    ru: {
-      page_title: "Lantern — сообщить о тротуаре",
-      title: "Сообщите об опасном тротуаре",
-      lead: "Фото и место — 15 секунд. Остальное ИИ поймёт по фото.",
-      photo_h: "Фото", photo_btn: "Сделать или выбрать фото", photo_change: "Заменить фото",
-      loc_h: "Место", loc_btn: "Моё местоположение",
-      loc_hint: "Нажмите на карту или перетащите метку на точное место.",
-      loc_finding: "Определяю местоположение…",
-      loc_found: "Место найдено (±{m} м). При необходимости перетащите метку.",
-      loc_set: "Место отмечено. Перетащите метку, чтобы уточнить.",
-      loc_denied: "Местоположение недоступно — нажмите на карту там, где проблема.",
-      pass_h: "Можно ли пройти?", pass_no: "Нельзя", pass_partly: "Частично", pass_yes: "Можно",
-      more_h: "Подробнее (необязательно)",
-      haz_h: "Что там?", haz_snow: "Снег", haz_ice: "Лёд", haz_icicles: "Сосульки", haz_other: "Другое",
-      place_h: "Что за место?", place_sidewalk: "Тротуар", place_crossing: "Переход", place_ramp: "Съезд",
-      place_stop: "Остановка", place_other: "Другое",
-      comment_h: "Комментарий", comment_ph: "Например: снежный вал у перехода",
-      regno_h: "Регистрационный номер думы (если есть)", regno_ph: "Для формальной жалобы, необязательно",
-      submit: "Отправить", sending: "Отправляю и проверяю фото…",
-      need: "Ещё нужно: {list}", need_photo: "фото", need_loc: "место", need_pass: "можно ли пройти",
-      err_send: "Не удалось отправить. Проверьте интернет и попробуйте ещё раз.",
-      err_server: "Сервер ответил ошибкой: {msg}",
-      err_too_many: "Вы уже отправили много сообщений. Спасибо! Попробуйте позже.",
-      err_outside: "Это место за пределами Риги. Передвиньте метку на карте в Ригу.",
-      done_ok_t: "Спасибо, сигнал принят!",
-      done_ok: "Инспектор города увидит ваше сообщение. Сохраните код, чтобы проверить статус.",
-      done_review_t: "Спасибо, сигнал принят!",
-      done_review: "Инспектор дополнительно проверит фото. Сохраните код, чтобы проверить статус.",
-      done_reject_t: "Спасибо!",
-      done_reject: "К сожалению, фото не похоже на опасный тротуар (снег, лёд, сосульки), поэтому к инспектору оно не ушло. Если мы ошиблись, попробуйте ещё раз с фото поближе.",
-      merged: "Об этом месте уже сообщали — ваш сигнал повышает приоритет.",
-      ticket: "Код заявки", again: "Сообщить ещё",
-      check_h: "Проверить заявку", check_ph: "Код, напр. K7QM2XPA", check_btn: "Проверить",
-      check_none: "Заявка с таким кодом не найдена.", mine: "Мои заявки",
-      st_accepted: "Принято", st_in_review: "Ждёт проверки инспектора", st_rejected: "Отклонено — не похоже на опасность",
-      st_watch: "Принято, срок уборки ещё идёт",
-      st_open: "Передано подрядчику",
-      st_done_reported: "Подрядчик сообщил, что убрано — город проверяет",
-      st_reopened: "Всё ещё не убрано — отправлено повторно",
-      st_verified: "Убрано и проверено",
-      st_cleared_in_time: "Убрано вовремя, до срока",
-      others: "Ещё {n} жителей сообщили об этом месте",
-      camera: "Подтверждено камерой города",
-      updated: "Обновлено {t}",
-      note_1201: "Lantern дополняет телефон 1201, а не заменяет его. В срочных случаях звоните 1201 или 112.",
-      privacy: "Мы не спрашиваем имя, телефон или e-mail. Фото видят инспектор города и подрядчик.",
-    },
   };
 
   const RIGA = [56.9496, 24.1052];
@@ -156,13 +113,14 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
   };
 
-  let lang = store.get("lantern_lang", null) || pickLang();
+  let lang = store.get("lantern_lang", null);
+  if (!I18N[lang]) lang = lang === "ru" ? "en" : pickLang();  // Russian was offered before: those visitors get English
   const state = { photo: null, lat: null, lon: null, locMsg: "loc_hint", locArg: {} };
   let map, marker, lastTicket = null, pollTimer = null;
 
   function pickLang() {
     const n = (navigator.language || "lv").slice(0, 2).toLowerCase();
-    return n === "ru" ? "ru" : n === "en" ? "en" : "lv";
+    return n === "en" || n === "ru" ? "en" : "lv";  // a Russian-language phone gets English
   }
   function tr(key, args) {
     let s = (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key;
@@ -232,7 +190,7 @@
     state.loc_source = source;
     if (!marker) {
       const icon = L.divIcon({ className: "", html: '<div class="pin"></div>', iconSize: [30, 30], iconAnchor: [15, 30] });
-      marker = L.marker([lat, lon], { draggable: true, icon, keyboard: true, title: "📍" }).addTo(map);
+      marker = L.marker([lat, lon], { draggable: true, icon, keyboard: true, title: tr("loc_h") }).addTo(map);
       marker.on("dragend", () => { const p = marker.getLatLng(); setPoint(p.lat, p.lng); setLocMsg("loc_set", {}, "good"); });
     } else {
       marker.setLatLng([lat, lon]);
@@ -307,9 +265,11 @@
         err.hidden = false;
         return;
       }
-      const mine = store.get("lantern_tickets", []);
-      mine.unshift({ ticket: data.ticket, at: new Date().toISOString(), relevant: data.relevant });
-      store.set("lantern_tickets", mine.slice(0, 10));
+      if (data.ticket) {  // a photo the AI rejects gets no ticket
+        const mine = store.get("lantern_tickets", []);
+        mine.unshift({ ticket: data.ticket, at: new Date().toISOString(), relevant: data.relevant });
+        store.set("lantern_tickets", mine.slice(0, 10));
+      }
       lastTicket = data;
       showDone(data);
     } catch (ex) {
@@ -326,17 +286,19 @@
     $("done-view").hidden = false;
     window.scrollTo(0, 0);
     renderDone(data);
-    checkTicket(data.ticket, $("done-status"));
     clearInterval(pollTimer);
+    $("done-status").textContent = "";
+    if (!data.ticket) return;
+    checkTicket(data.ticket, $("done-status"));
     if (data.relevant !== "reject") pollTimer = setInterval(() => checkTicket(data.ticket, $("done-status")), 15000);
   }
   function renderDone(data) {
     const kind = data.relevant === "reject" ? "reject" : data.relevant === "review" ? "review" : "ok";
-    $("done-icon").textContent = kind === "reject" ? "🙏" : "🏮";
     $("done-icon").className = "done-icon" + (kind === "reject" ? " reject" : "");
     $("done-title").textContent = tr("done_" + kind + "_t");
     $("done-text").textContent = tr("done_" + kind);
-    $("done-ticket").textContent = data.ticket;
+    $("done-ticket").textContent = data.ticket || "";
+    $("done-ticket").parentElement.hidden = !data.ticket;
   }
   $("again").addEventListener("click", () => {
     clearInterval(pollTimer);
@@ -371,7 +333,7 @@
       if (st.updated_at) {
         const p = document.createElement("p");
         p.className = "hint";
-        p.textContent = tr("updated", { t: new Date(st.updated_at).toLocaleString(lang === "lv" ? "lv-LV" : lang === "ru" ? "ru-RU" : "en-GB") });
+        p.textContent = tr("updated", { t: new Date(st.updated_at).toLocaleString(lang === "lv" ? "lv-LV" : "en-GB") });
         box.append(p);
       }
       if (st.alert_status === "verified" || st.alert_status === "cleared_in_time") clearInterval(pollTimer);
@@ -399,7 +361,7 @@
       const code = document.createElement("strong");
       code.textContent = m.ticket;
       const when = document.createElement("small");
-      when.textContent = new Date(m.at).toLocaleString(lang === "lv" ? "lv-LV" : lang === "ru" ? "ru-RU" : "en-GB");
+      when.textContent = new Date(m.at).toLocaleString(lang === "lv" ? "lv-LV" : "en-GB");
       b.append(code, when);
       b.addEventListener("click", () => { $("check-input").value = m.ticket; checkTicket(m.ticket, $("check-result")); });
       li.append(b);

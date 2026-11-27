@@ -16,7 +16,7 @@ T = {
         "verified_at": "Confirmed (clear frame / inspector)",
         "act": "Defect act (suggested)", "notice": "Letter to the contractor (suggested)",
         "no": "impassable", "partly": "partly passable", "yes": "passable", "by_ai": "AI photo assessment",
-        "title": "Evidence package", "alert": "alert", "generated": "Generated", "riga": "Riga", "status": "status",
+        "title": "Evidence package", "alert": "case No.", "generated": "Generated", "riga": "Riga", "status": "status",
         "overdue": "OVERDUE", "place": "Place", "district": "District", "contractor": "Contractor",
         "camera_zone": "Camera / zone", "resident": "resident report", "place_type": "Place type",
         "coords": "Coordinates", "deadline": "Clearing deadline", "deadline_short": "Deadline",
@@ -38,7 +38,7 @@ T = {
         "verified_at": "Apstiprināts (tīrs kadrs / inspektors)",
         "act": "Defektu akts (ieteikums)", "notice": "Vēstule darbuzņēmējam (ieteikums)",
         "no": "nevar paiet", "partly": "daļēji var paiet", "yes": "var paiet", "by_ai": "MI foto vērtējums",
-        "title": "Pierādījumu pakete", "alert": "trauksme", "generated": "Sagatavots", "riga": "Rīga", "status": "statuss",
+        "title": "Pierādījumu pakete", "alert": "gadījums Nr.", "generated": "Sagatavots", "riga": "Rīga", "status": "statuss",
         "overdue": "NOKAVĒTS", "place": "Vieta", "district": "Rajons", "contractor": "Darbuzņēmējs",
         "camera_zone": "Kamera / zona", "resident": "iedzīvotāja ziņojums", "place_type": "Vietas tips",
         "coords": "Koordinātas", "deadline": "Tīrīšanas termiņš", "deadline_short": "Termiņš",
@@ -85,13 +85,12 @@ def render(ev: dict, tile_url: str, tile_attribution: str, images_credit: str, s
     hist = "".join(f"<tr><td>{_e(h['riga_time'])}</td><td>{_e(h['from_status'] or '—')} → {_e(h['to_status'])}</td>"
                    f"<td>{_e(h['actor'])}</td><td>{_e(h['note'])}</td></tr>" for h in ev["history"])
     overdue = f'<span class="tag red">{_e(t["overdue"])}</span>' if ev["overdue"] else ""
-    sev = ev["severity"] or "notice"
     reopened = f" · reopened ×{ev['reopened_count']}" if ev["reopened_count"] else ""
     geo = json.dumps({"lat": p["lat"], "lon": p["lon"], "polygon": p["polygon"], "tile": tile_url,
                       "attr": tile_attribution}).replace("</", "<\\/")
     return f"""<!doctype html>
 <html lang="{_e(lang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lantern · {_e(t['title'])} #{ev['alert_id']}</title>
+<title>Lantern · {_e(t['title'])} · {_e(t['alert'])} {ev['alert_id']}</title>
 <link rel="stylesheet" href="/assets/vendor/leaflet/leaflet.css">
 <style>
 :root {{ --ink:#1d2430; --muted:#667085; --line:#d9dee6; --red:#c62828; --act:#8e24aa; --bg:#fff; }}
@@ -101,7 +100,7 @@ body {{ font:14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 h1 {{ font-size:22px; margin:0 0 4px; }}
 h2 {{ font-size:16px; margin:24px 0 8px; border-bottom:1px solid var(--line); padding-bottom:4px; }}
 .muted {{ color:var(--muted); }} .small {{ font-size:12px; }}
-.tag {{ display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px; font-weight:600; background:#eef1f5; margin-left:6px; }}
+.tag {{ display:inline-block; padding:1px 7px; border-radius:2px; font-size:12px; font-weight:600; background:#eef1f5; margin-left:6px; }}
 .tag.act {{ background:#f3e5f5; color:var(--act); }} .tag.red {{ background:#fdecea; color:var(--red); }}
 .grid {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }}
 @media (max-width:700px) {{ .grid {{ grid-template-columns:1fr; }} }}
@@ -120,18 +119,17 @@ footer {{ margin-top:28px; font-size:12px; color:var(--muted); border-top:1px so
 </style></head><body>
 <p class="noprint"><a href="?role=inspector&amp;lang=en">EN</a><a href="?role=inspector&amp;lang=lv">LV</a>
 <button onclick="print()">{_e(t['print'])}</button></p>
-<h1>{_e(t['title'])} · {_e(t['alert'])} #{ev['alert_id']}</h1>
+<h1>{_e(t['title'])} · {_e(t['alert'])} {ev['alert_id']}</h1>
 <div class="muted">{_e(t['generated'])} {_e(ev['generated_riga'])} ({_e(t['riga'])}) · {_e(t['status'])} <b>{_e(ev['status'])}</b>
-<span class="tag {'act' if sev == 'act' else ''}">{_e(t[sev])}</span>{overdue}</div>
-<div class="muted small">{_e(ev['severity_reason'] or '')}{reopened}</div>
+{overdue}</div>
+<div class="muted small">{reopened}</div>
 
 <div class="grid">
 <section><h2>{_e(t['place'])}</h2><div id="map"></div>
 <table class="kv"><tr><th>{_e(t['district'])}</th><td>{_e(p['district'])}</td></tr>
 <tr><th>{_e(t['contractor'])}</th><td>{_e(p['contractor_name'] or p['contractor_id'])}</td></tr>
 <tr><th>{_e(t['camera_zone'])}</th><td>{_e(p['camera_name'] or p['camera_id'] or '—')}<br><span class=muted>{_e(p['zone_id'] or t['resident'])}</span></td></tr>
-<tr><th>{_e(t['place_type'])}</th><td>{_e(p['place_type'])}</td></tr>
-<tr><th>{_e(t['coords'])}</th><td>{p['lat']:.5f}, {p['lon']:.5f}</td></tr></table></section>
+<tr><th>{_e(t['place_type'])}</th><td>{_e(p['place_type'])}</td></tr></table></section>
 <section><h2>{_e(t['deadline'])}</h2>
 <table class="kv"><tr><th>{_e(t['deadline_short'])}</th><td><b>{_e(d['riga_time'] or '—')}</b> ({_e(t['riga'])})<br>
 <span class=muted>{_e(d['deadline_at'] or '')} UTC</span></td></tr>

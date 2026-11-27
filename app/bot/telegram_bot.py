@@ -10,6 +10,12 @@ Needs TELEGRAM_BOT_TOKEN (from @BotFather) and LANTERN_API_URL in .env.
 
 Privacy: the server only gets device_id = sha256(salt + telegram user id)[:16]. The raw
 Telegram id and chat id stay in the bot's local state file (data/bot_state.json).
+
+Mini App mode (WEBAPP_URL set to the public https address of the Lantern server): instead of
+taking photos from the chat, which can come from the gallery, the bot shows a "Report" button
+that opens /tg inside Telegram. That page takes the photo with the live camera and sends the
+phone's own position; the button URL carries a signed pass for this person (app/tgapp.py).
+When the page is done it hands the ticket back (web_app_data) and the bot follows it as usual.
 """
 import hashlib
 import json
@@ -27,6 +33,7 @@ from typing import Optional
 import httpx
 
 from ..config import ROOT, env
+from ..tgapp import make_pass
 from .i18n import LANG_NAMES, LANGS, t
 
 log = logging.getLogger("lantern.bot")
@@ -144,10 +151,11 @@ class State:
 
 
 class LanternBot:
-    def __init__(self, telegram: Telegram, api: httpx.Client, state: State):
+    def __init__(self, telegram: Telegram, api: httpx.Client, state: State, webapp_url: str = ""):
         self.tg = telegram
         self.api = api
         self.state = state
+        self.webapp_url = (webapp_url or "").rstrip("/")
         self.drafts: dict = {}  # chat_id -> in-progress report (in memory only)
         self.last_status_check = 0.0
 
@@ -175,7 +183,24 @@ class LanternBot:
         self.send(chat_id, t("choose_lang", "en"),
                   self.inline([[(LANG_NAMES[c], f"lang:{c}") for c in LANGS]]))
 
+    def app_markup(self, chat_id) -> Optional[dict]:
+        """Keyboard with the Mini App button and a fresh signed pass, or None when the app is off.
+        (In a private chat the chat id is the person's Telegram id.)"""
+        if not self.webapp_url:
+            return None
+        pass_ = make_pass(self.device_id(chat_id))
+        if not pass_:
+            return None
+        L = self.lang(chat_id)
+        return {"keyboard": [[{"text": t("btn_app", L), "web_app": {"url": f"{self.webapp_url}/tg?t={pass_}&lang={L}"}}]],
+                "resize_keyboard": True, "is_persistent": True}
+
     def ask_photo(self, chat_id) -> None:
+        markup = self.app_markup(chat_id)
+        if markup:  # photos come only from the app's live camera
+            self.drafts.pop(chat_id, None)
+            self.send(chat_id, t("ask_app", self.lang(chat_id)), markup)
+            return
         self.drafts[chat_id] = {"step": "photo"}
         self.send(chat_id, t("ask_photo", self.lang(chat_id)), {"remove_keyboard": True})
 
@@ -236,7 +261,14 @@ class LanternBot:
             chat["lang"] = "lv"
             self.state.save()
 
+        if msg.get("web_app_data"):
+            self.on_app_data(chat_id, msg["web_app_data"].get("data"))
+            return
         file_id, mime = self._photo_of(msg)
+        if self.webapp_url and (file_id or msg.get("location") or msg.get("venue")):
+            # a chat photo may be old or from the gallery: point to the app's live camera instead
+            self.send(chat_id, t("use_app", self.lang(chat_id)), self.app_markup(chat_id))
+            return
         if file_id:
             self.on_photo(chat_id, user_id, file_id, mime)
             return
@@ -358,25 +390,47 @@ class LanternBot:
             self.send(chat_id, t("send_failed", L))
             return  # draft kept at the confirm step: pressing Send again retries
         self.drafts.pop(chat_id, None)
-        ticket = result["ticket"]
-        rel = result.get("relevant")
+        self.follow(chat_id, result["ticket"], result.get("relevant"), bool(result.get("alert_id")),
+                    bool(result.get("same_photo")))
+        log.info("report %s from chat sent: %s, location from %s", result["ticket"], result.get("relevant"),
+                 d.get("loc_source"))
+
+    def follow(self, chat_id, ticket: str, rel: Optional[str], has_alert: bool, same_photo: bool,
+               markup: Optional[dict] = None) -> None:
+        """Remember the ticket for status pushes and tell the person what the AI decided."""
+        L = self.lang(chat_id)
         chat = self.state.chat(chat_id)
         chat["tickets"].append({"ticket": ticket, "sent_at": _iso(_now()), "relevant": rel,
                                 "alert_status": None, "done": rel == "reject"})
         chat["tickets"] = chat["tickets"][-30:]
         self.state.save()
         if rel == "reject":
-            self.send(chat_id, t("rejected", L, ticket=ticket))
+            text = t("rejected", L, ticket=ticket)
         elif rel == "review":
-            self.send(chat_id, t("review", L, ticket=ticket))
+            text = t("review", L, ticket=ticket)
         else:
             text = t("accepted", L, ticket=ticket)
-            if result.get("alert_id") and self._merged(ticket):
+            if has_alert and self._merged(ticket):
                 text += "\n\n" + t("merged", L)
-            if result.get("same_photo"):
+            if same_photo:
                 text += "\n\n" + t("same_photo", L)
-            self.send(chat_id, text)
-        log.info("report %s from chat sent: %s, location from %s", ticket, rel, d.get("loc_source"))
+        self.send(chat_id, text, markup)
+
+    def on_app_data(self, chat_id, raw) -> None:
+        """The Mini App finished: it hands back the ticket. Treat it as a claim and look it up on the server."""
+        try:
+            ticket = str((json.loads(raw or "{}") or {}).get("ticket") or "")
+        except (ValueError, AttributeError):
+            ticket = ""
+        st = self.ticket(ticket) if re.fullmatch(r"[A-Z0-9]{6,12}", ticket) else None
+        if st is None:
+            log.warning("mini app sent an unknown ticket")
+            return
+        if any(x["ticket"] == ticket for x in self.state.chat(chat_id)["tickets"]):
+            return
+        self.follow(chat_id, ticket, st.get("relevant"), bool(st.get("alert_status")), False,
+                    self.app_markup(chat_id))  # fresh pass on the button for the next report
+        log.info("report %s from the mini app: %s", ticket, st.get("relevant"))
 
     def _merged(self, ticket: str) -> bool:
         st = self.ticket(ticket)
@@ -499,7 +553,12 @@ def main() -> None:
     key = env("INTERNAL_API_KEY", "")  # lets the server trust our hashed device ids from another host
     api = httpx.Client(base_url=api_url, headers={"X-Lantern-Key": key} if key else None)
     state = State(ROOT / env("BOT_STATE_FILE", "data/bot_state.json"))
-    LanternBot(tg, api, state).run_forever()
+    webapp = env("WEBAPP_URL", "").strip()
+    if webapp and not webapp.startswith("https://"):
+        log.warning("WEBAPP_URL must be https (Telegram refuses other links); Mini App is off")
+        webapp = ""
+    log.info("mini app: %s", "on" if webapp else "off (photos from the chat)")
+    LanternBot(tg, api, state, webapp).run_forever()
 
 
 if __name__ == "__main__":

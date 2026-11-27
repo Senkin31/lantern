@@ -119,12 +119,25 @@ Spam limits stop floods; these rules stop a single convincing fake. None of them
 
 API callers that send no `location_source` (demo script, replay) count as exact. Tests: `tests/test_trust.py`.
 
+### Telegram Mini App (photo taken now, the phone's own location)
+
+A photo sent in a chat can be old or from the gallery, and a place can be typed. With the Mini App the bot shows a **📸 Report a sidewalk** button instead. It opens `/tg` inside Telegram: the page takes the photo with the **live camera** (no gallery) and sends the phone's position (Telegram's `LocationManager`, else the browser's geolocation) with its accuracy.
+
+- **Who is sending:** the button URL carries a pass the bot signs for this person: `device_id.expiry.hmac`, key derived from `TELEGRAM_BOT_TOKEN`, valid 72 h, renewed with every bot reply. The server (`POST /reports/app`) refuses a missing or forged pass (403). It never sees the raw Telegram id.
+- **Trust:** a valid pass plus accuracy ≤ `GPS_ACCURACY_M` (75 m) counts as an exact place (`gps`); a rougher fix is `coarse` (flag `coarse_location`, waits like a typed place). Time is the server's. If the in-app camera is blocked, the phone's own camera dialog is offered; those reports get the flag `picked_photo`. Live photos show a green "📷 Taken live in the Telegram app" chip in the inspector.
+- **Back to the bot:** when the page is done it hands the ticket to the bot (`web_app_data`), which replies with the AI's verdict and follows the status as before. While the Mini App is on, photos sent in the chat are not taken.
+- **Needs https.** For a phone test run a tunnel: `cloudflared tunnel --url http://127.0.0.1:8000` and start the bot with `WEBAPP_URL=https://<the link>`. Requests that came through the tunnel (forwarding headers) reach only `/tg`, `/assets/`, `/reports/app` and `/health`; the inspector, contractor, API and demo controls answer 404, and such requests never get the local `TRUSTED_HOSTS` trust. Without `WEBAPP_URL` the bot works as before (photos in the chat).
+- **Limits, honestly:** a web page cannot prove a photo is live. This stops the easy fakes (gallery photos, screenshots sent from the chat, a picked place); a phone with a fake-GPS app or a camera pointed at a screen can still lie. The screen case is also caught by the "picture of a screen" rule above.
+
+Tests: `tests/test_miniapp.py`.
+
 ## API
 
 | Method | Path | |
 | --- | --- | --- |
 | POST | `/signals` | camera signal (JSON, contract from the brief) → `201 {"alert_id": 12 \| null}` |
 | POST | `/reports` | multipart: `photo`, `lat`, `lon` (+ `passable`, `hazard`: optional, residents are no longer asked; when missing the server takes them from the model: accept → `no`, review → `partly`, reject → `yes`, hint → hazard, stored with `passable_by = ai`; `location_source`: `gps` | `pin` | `typed` | `map`; `place_type`, `comment`, `device_id`, `timestamp`, `channel`, `registration_no` for a formal council complaint) |
+| POST | `/reports/app` | Telegram Mini App: multipart `photo`, `lat`, `lon`, `accuracy` (m), `capture` (`live` \| `picker`), `tg_pass` (signed by the bot) |
 | GET | `/reports/ticket/{ticket}` | resident's status for one report |
 | GET | `/reports?role=inspector&relevant=review\|reject\|all` | moderation list |
 | POST | `/reports/{id}/moderate` | `{"decision": "accept\|reject"}` |

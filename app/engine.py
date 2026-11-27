@@ -26,7 +26,7 @@ REPORT_HAZARDS = ("snow", "ice", "icicles", "other")
 RELEVANT = ("accept", "review", "reject")
 # where a report's location came from: the phone's GPS is exact; a pin someone picked, typed coordinates
 # and a tap on the web map can point anywhere. None = a trusted API caller (demo, replay).
-LOCATION_SOURCES = ("gps", "pin", "typed", "map")
+LOCATION_SOURCES = ("gps", "pin", "typed", "map", "coarse")
 EXACT_LOCATION = (None, "gps")
 # the model's note (or its optional "source") says this is not a photo taken on the street
 SECONDHAND = re.compile(r"screen\s?shot|screen capture|photo of a (?:screen|monitor|display)|web\s?cam|"
@@ -294,8 +294,12 @@ class Engine:
         relevant = analysis.get("relevant") if analysis.get("relevant") in RELEVANT else "review"
         # --- anti-fake: these never block a report, they only make the inspector look first
         flags = []
-        if r.get("loc_source") not in EXACT_LOCATION:
+        if r.get("loc_source") == "coarse":
+            flags.append("coarse_location")  # the phone's own fix, but only to wifi / cell-tower accuracy
+        elif r.get("loc_source") not in EXACT_LOCATION:
             flags.append("approx_location")  # cannot send the contractor alone (see dispatchable)
+        if r.get("capture") == "picker":
+            flags.append("picked_photo")  # Mini App camera was unavailable: the phone's file dialog was used
         if relevant == "accept" and (analysis.get("source") in ("screenshot", "webcam", "stock", "screen")
                                      or SECONDHAND.search(analysis.get("note") or "")):
             relevant = "review"
@@ -327,14 +331,14 @@ class Engine:
             report_id = self.db.run(
                 "INSERT INTO reports(alert_id, ticket, channel, photo_path, lat, lon, passable, hazard, place_type, "
                 "comment, device_id, timestamp, relevant, ai_score, ai_hint, ai_note, counted, duplicate, received_at, "
-                "photo_sha256, photo_dhash, ip_hash, reuse_of, registration_no, passable_by, loc_source, flags) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "photo_sha256, photo_dhash, ip_hash, reuse_of, registration_no, passable_by, loc_source, flags, capture) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (alert_id, ticket, channel, photo_path, r["lat"], r["lon"], r["passable"], r.get("hazard"),
                  r.get("place_type"), r.get("comment") or "", r["device_id"], fmt_ts(ts), relevant,
                  analysis.get("score"), analysis.get("hint"), analysis.get("note"),
                  1 if counted else 0, 1 if duplicate else 0, now, photo_sha256, photo_dhash, ip_hash, reuse_of,
                  registration_no, r.get("passable_by") or "resident", r.get("loc_source"),
-                 json.dumps(flags) if flags else None))
+                 json.dumps(flags) if flags else None, r.get("capture")))
             if alert_id is not None:
                 self._bump_evidence(alert_id, ts)
                 self.recompute(alert_id)

@@ -109,6 +109,17 @@ T = {
     },
     "cancelled": {"lv": "Atcelts. Lai sāktu no jauna, nosūti foto.", "en": "Cancelled. Send a photo to start again.",
                   "ru": "Отменено. Чтобы начать заново, пришлите фото."},
+    "btn_app": {"lv": "📸 Ziņot par ietvi", "en": "📸 Report a sidewalk", "ru": "📸 Сообщить о тротуаре"},
+    "ask_app": {
+        "lv": "Spied «📸 Ziņot par ietvi» zemāk. Lietotne uzņems foto tagad un pievienos vietu, kur tu esi.",
+        "en": "Press «📸 Report a sidewalk» below. The app takes the photo now and adds where you are.",
+        "ru": "Нажмите «📸 Сообщить о тротуаре» ниже. Приложение сделает фото сейчас и добавит, где вы находитесь.",
+    },
+    "use_app": {
+        "lv": "Foto no čata nepieņemam: tas var būt vecs. Spied «📸 Ziņot par ietvi» zemāk un nofotografē vietu tagad.",
+        "en": "We don't take photos from the chat: they can be old. Press «📸 Report a sidewalk» below and take the photo now.",
+        "ru": "Фото из чата не принимаем: оно может быть старым. Нажмите «📸 Сообщить о тротуаре» ниже и сфотографируйте сейчас.",
+    },
     "need_photo": {"lv": "Vispirms nosūti foto 📷", "en": "Please send a photo first 📷",
                    "ru": "Сначала пришлите фото 📷"},
     "need_location": {"lv": "Nosūti atrašanās vietu ar pogu zemāk 📍 vai ielīmē koordinātas / kartes saiti",

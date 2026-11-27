@@ -142,6 +142,7 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .chip { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--surface-2);
   border: 1px solid var(--line); color: var(--text-dim); margin: 2px 4px 2px 0; }
 .chip.warn { border-color: var(--medium); color: #8a5a00; background: rgba(232, 163, 61, .12); }
+.chip.ok { border-color: var(--verified, #2e9d5b); color: var(--verified, #2e9d5b); background: rgba(46, 157, 91, .10); }
 .chip.alarm { border-color: var(--high); color: var(--high); background: rgba(214, 69, 69, .08); }
 .chip.purple { border-color: var(--reopened); color: var(--reopened); background: rgba(142, 68, 173, .08); }
 .chip.sev-act { border-color: #8e24aa; color: #8e24aa; background: rgba(142, 36, 170, .10); font-weight: 700; }

@@ -182,7 +182,7 @@ class Views:
         d = {
             "id": r["id"], "timestamp": r["timestamp"], "photo_url": _photo_url(r["photo_path"]),
             "lat": r["lat"], "lon": r["lon"], "passable": r["passable"], "passable_by": r["passable_by"],
-            "loc_source": r["loc_source"], "flags": json.loads(r["flags"]) if r["flags"] else [],
+            "loc_source": r["loc_source"], "capture": r["capture"], "flags": json.loads(r["flags"]) if r["flags"] else [],
             "hazard": r["hazard"],
             "place_type": r["place_type"], "comment": r["comment"],
         }

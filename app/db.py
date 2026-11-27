@@ -161,7 +161,8 @@ class Database:
                   ("alerts", "severity_suggested", "TEXT"), ("alerts", "severity_manual", "TEXT"),
                   ("alerts", "severity_reason", "TEXT"), ("alerts", "false_alarm", "INTEGER DEFAULT 0"),
                   ("reports", "passable_by", "TEXT DEFAULT 'resident'"),
-                  ("reports", "loc_source", "TEXT"), ("reports", "flags", "TEXT"))
+                  ("reports", "loc_source", "TEXT"), ("reports", "flags", "TEXT"),
+                  ("reports", "capture", "TEXT"))
 
     def _migrate(self, conn) -> None:
         for table, col, typ in self.MIGRATIONS:

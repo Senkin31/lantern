@@ -18,10 +18,13 @@ def bot_token(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:test-token")
 
 
-def app_report(client, pass_, *, accuracy=12, capture="live", seed=1, lat=56.9600, lon=24.1300, headers=TUNNEL):
+def app_report(client, pass_, *, accuracy=12, capture="live", seed=1, lat=56.9600, lon=24.1300, headers=TUNNEL,
+               gps=None):
     data = {"lat": lat, "lon": lon, "capture": capture, "tg_pass": pass_}
     if accuracy is not None:
         data["accuracy"] = accuracy
+    if gps:  # the phone's own fix, when the resident moved the pin to lat/lon
+        data.update({k: v for k, v in zip(("gps_lat", "gps_lon"), gps) if v is not None})
     return client.post("/reports/app", data=data, files={"photo": ("camera.jpg", photo(seed), "image/jpeg")},
                        headers=headers)
 
@@ -65,6 +68,35 @@ def test_rough_location_and_file_dialog_are_flagged(make_client):
     assert reps[unknown["report_id"]]["loc_source"] == "coarse"
     assert reps[picked.json()["report_id"]]["flags"] == ["picked_photo"]
     assert picked.json()["relevant"] == "review"  # the file dialog may offer the gallery: inspector first
+
+
+def test_pin_moved_a_few_metres_is_kept_with_the_phone_fix(make_client):
+    """The preview map lets the resident move the pin up to PIN_MOVE_M (10 m) from the phone's fix."""
+    client, engine, _ = setup(make_client)
+    m_lat = 1 / 111_320  # one metre north, in degrees
+    fix = (56.9600, 24.1300)
+    moved = app_report(client, tgapp.make_pass("dev-pin"), lat=fix[0] + 7 * m_lat, lon=fix[1], gps=fix)
+    assert moved.status_code == 201, moved.text
+    rep = {r["id"]: r for r in client.get("/reports", params={"role": "inspector"}).json()}[moved.json()["report_id"]]
+    assert rep["flags"] == ["moved_pin"] and 6.5 <= rep["pin_moved_m"] <= 7.5
+    assert (rep["gps_lat"], rep["gps_lon"]) == fix and rep["lat"] == pytest.approx(fix[0] + 7 * m_lat)
+    assert engine.alert(moved.json()["alert_id"])["status"] == "open"  # a small move does not hold the report back
+    # the pin where the phone put it: no flag, and nothing else changes
+    same = app_report(client, tgapp.make_pass("dev-pin2"), seed=5, lat=56.9700, lon=24.1500, gps=(56.9700, 24.1500))
+    rep2 = {r["id"]: r for r in client.get("/reports", params={"role": "inspector"}).json()}[same.json()["report_id"]]
+    assert rep2["flags"] == [] and rep2["pin_moved_m"] == 0
+    # the contractor never gets the phone's raw fix
+    assert "gps_lat" not in client.get("/reports/ticket/" + same.json()["ticket"]).json()
+
+
+def test_pin_moved_too_far_or_half_a_fix_is_refused(make_client):
+    client, _, _ = setup(make_client)
+    m_lat = 1 / 111_320
+    far = app_report(client, tgapp.make_pass("dev-far"), lat=56.9600 + 25 * m_lat, lon=24.1300, gps=(56.9600, 24.1300))
+    assert far.status_code == 422 and far.json()["detail"]["code"] == "moved_too_far"
+    half = app_report(client, tgapp.make_pass("dev-half"), gps=(56.9600, None))
+    assert half.status_code == 422 and half.json()["detail"]["code"] == "bad_fix"
+    assert client.get("/reports", params={"role": "inspector"}).json() == []  # nothing was stored
 
 
 def test_bad_or_missing_pass_is_refused(make_client):

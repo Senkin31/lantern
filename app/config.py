@@ -76,6 +76,8 @@ class Settings:
         # anti-fake: a sender with this many false-alarm alerts gets only "review" (inspector checks first)
         self.false_alarm_strikes = int(env_float("FALSE_ALARM_STRIKES", 2))
         self.gps_accuracy_m = env_float("GPS_ACCURACY_M", 75)  # Mini App: worse than this is not exact
+        # Mini App: how far the resident may move the pin from the phone's own fix (the app stops it there too)
+        self.pin_move_m = env_float("PIN_MOVE_M", 10)
 
         self.tile_url = env("TILE_URL", "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
         self.tile_attribution = env(

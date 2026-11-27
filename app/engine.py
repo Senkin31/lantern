@@ -298,6 +298,8 @@ class Engine:
             flags.append("coarse_location")  # the phone's own fix, but only to wifi / cell-tower accuracy
         elif r.get("loc_source") not in EXACT_LOCATION:
             flags.append("approx_location")  # cannot send the contractor alone (see dispatchable)
+        if (r.get("pin_moved_m") or 0) >= 1:
+            flags.append("moved_pin")  # Mini App: the resident moved the pin on the preview map (max PIN_MOVE_M)
         if r.get("capture") == "picker":
             flags.append("picked_photo")  # Mini App camera was unavailable: the phone's file dialog was used
             if relevant == "accept":
@@ -336,14 +338,16 @@ class Engine:
             report_id = self.db.run(
                 "INSERT INTO reports(alert_id, ticket, channel, photo_path, lat, lon, passable, hazard, place_type, "
                 "comment, device_id, timestamp, relevant, ai_score, ai_hint, ai_note, counted, duplicate, received_at, "
-                "photo_sha256, photo_dhash, ip_hash, reuse_of, registration_no, passable_by, loc_source, flags, capture) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "photo_sha256, photo_dhash, ip_hash, reuse_of, registration_no, passable_by, loc_source, flags, capture, "
+                "gps_lat, gps_lon, pin_moved_m) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (alert_id, ticket, channel, photo_path, r["lat"], r["lon"], r["passable"], r.get("hazard"),
                  r.get("place_type"), r.get("comment") or "", r["device_id"], fmt_ts(ts), relevant,
                  analysis.get("score"), analysis.get("hint"), analysis.get("note"),
                  1 if counted else 0, 1 if duplicate else 0, now, photo_sha256, photo_dhash, ip_hash, reuse_of,
                  registration_no, r.get("passable_by") or "resident", r.get("loc_source"),
-                 json.dumps(flags) if flags else None, r.get("capture")))
+                 json.dumps(flags) if flags else None, r.get("capture"),
+                 r.get("gps_lat"), r.get("gps_lon"), r.get("pin_moved_m")))
             if alert_id is not None:
                 self._bump_evidence(alert_id, ts)
                 self.recompute(alert_id)

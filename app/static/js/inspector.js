@@ -184,7 +184,8 @@
   // anti-fake flags from the server: why this report waits for the inspector instead of going straight on
   function trustChips(r) {
     const live = r.capture === "live" ? `<div class="flag flag-ok" title="${esc(t("captureTip_live"))}">${esc(t("capture_live"))}</div>` : "";
-    return live + (r.flags || []).map((f) => `<div class="flag flag-red" title="${esc(t("flagTip_" + f))}">${esc(t("flag_" + f))}</div>`).join("");
+    const m = r.pin_moved_m != null ? Math.round(r.pin_moved_m) : "?";
+    return live + (r.flags || []).map((f) => `<div class="flag ${f === "moved_pin" ? "" : "flag-red"}" title="${esc(t("flagTip_" + f))}">${esc(t("flag_" + f, { m }))}</div>`).join("");
   }
 
   function styleFor(a) {

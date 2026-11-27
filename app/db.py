@@ -172,7 +172,9 @@ class Database:
                   ("alerts", "severity_reason", "TEXT"), ("alerts", "false_alarm", "INTEGER DEFAULT 0"),
                   ("reports", "passable_by", "TEXT DEFAULT 'resident'"),
                   ("reports", "loc_source", "TEXT"), ("reports", "flags", "TEXT"),
-                  ("reports", "capture", "TEXT"))
+                  ("reports", "capture", "TEXT"),
+                  # Mini App: the phone's own fix when the resident moved the pin (lat/lon is the pin)
+                  ("reports", "gps_lat", "REAL"), ("reports", "gps_lon", "REAL"), ("reports", "pin_moved_m", "REAL"))
 
     def _migrate(self, conn) -> None:
         for table, col, typ in self.MIGRATIONS:

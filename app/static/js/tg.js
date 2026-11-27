@@ -11,6 +11,10 @@
   const T = {
     lv: {
       service: "Ziņojumi par ietvēm ziemā", proto: "Prototips",
+      place_h: "Vai punkts ir pareizajā vietā?",
+      place_hint: "Zilais aplis rāda, cik precīzi tālrunis zina vietu. Ja punkts nav uz pareizās ietves, pavelc to vai pieskaries kartei (līdz 10 m).",
+      place_moved: "Punkts pārvietots par {m} m.", place_limit: "Tālāk par 10 m nevar. Pieej tuvāk vietai un fotografē vēlreiz.",
+      err_moved: "Punktu var pārvietot ne vairāk kā par 10 m.",
       proto_note: "Prototips, izveidots RobotHack 2026. Nav nevienas iestādes oficiāls pakalpojums.",
       title: "Ziņot par ietvi", lead: "Nofotografē vietu tagad. Foto un tava atrašanās vieta aizies kopā.",
       cam_starting: "Atver kameru…",
@@ -34,6 +38,10 @@
     },
     en: {
       service: "Winter sidewalk reports", proto: "Prototype",
+      place_h: "Is the point in the right place?",
+      place_hint: "The blue circle shows how precisely the phone knows where you are. If the point is not on the right sidewalk, drag it or tap the map (up to 10 m).",
+      place_moved: "Point moved by {m} m.", place_limit: "It cannot go further than 10 m. Walk closer to the place and take the photo again.",
+      err_moved: "The point can be moved by 10 m at most.",
       proto_note: "Prototype made at RobotHack 2026. Not an official service of any authority.",
       title: "Report a sidewalk", lead: "Take the photo now. The photo and where you are go together.",
       cam_starting: "Opening the camera…",
@@ -57,6 +65,10 @@
     },
     ru: {
       service: "Сообщения о тротуарах зимой", proto: "Прототип",
+      place_h: "Точка на правильном месте?",
+      place_hint: "Синий круг показывает, насколько точно телефон знает, где вы. Если точка не на том тротуаре, перетащите её или нажмите на карту (до 10 м).",
+      place_moved: "Точка сдвинута на {m} м.", place_limit: "Дальше 10 м нельзя. Подойдите ближе к месту и сфотографируйте снова.",
+      err_moved: "Точку можно сдвинуть не больше чем на 10 м.",
       proto_note: "Прототип, сделанный на RobotHack 2026. Не официальная услуга какого-либо учреждения.",
       title: "Сообщить о тротуаре", lead: "Сфотографируйте место сейчас. Фото и ваше местоположение уйдут вместе.",
       cam_starting: "Открываем камеру…",
@@ -91,10 +103,10 @@
   const afterShot = $("after-shot"), sendBtn = $("send"), locBox = $("loc"), locRow = $("loc-row");
   let stream = null, shot = null, loc = null, sent = false, result = null;
   // one small line for debugging on a real phone: platform, Telegram version, camera and location path
-  const diag = { cam: "…", loc: "…" };
+  const diag = { cam: "…", loc: "…", map: "" };
   function showDiag() {
     $("diag").textContent = [tg ? `${tg.platform} · TG ${tg.version}` : "no Telegram", `cam: ${diag.cam}`,
-      `loc: ${diag.loc}`].join(" · ");
+      `loc: ${diag.loc}`].concat(diag.map ? [`map: ${diag.map}`] : []).join(" · ");
   }
   showDiag();
 
@@ -102,6 +114,7 @@
     tg.ready();
     tg.expand();
     try { tg.setHeaderColor("#0b3a6b"); tg.setBackgroundColor("#eef1f4"); } catch (e) { /* older Telegram: keep its colours */ }
+    try { if (tg.isVersionAtLeast && tg.isVersionAtLeast("7.7")) tg.disableVerticalSwipes(); } catch (e) { /* keep swipes */ }
   }
 
   function stop(msgKey) {
@@ -118,34 +131,93 @@
     locRow.hidden = cls !== "bad";
   }
 
-  function gotLocation(lat, lon, acc, via) {
-    loc = { lat, lon, acc: acc == null ? null : Math.round(acc) };
-    diag.loc = `${via} ±${loc.acc == null ? "?" : loc.acc} m`;
-    showDiag();
+  // The phone keeps reporting its position while the app is open (GPS gets better for 10-20 s after
+  // the first wifi / cell-tower guess), and we keep the best recent fix. A newer fix wins when it is as
+  // accurate, when the kept one is older than FRESH_MS, or when the two disagree by more than both
+  // accuracies together (the phone moved). A fix without an accuracy never beats one with it.
+  const FRESH_MS = 15000, PIN_MOVE_M = 10, POLL_MS = 3000;
+  let watchId = null, pollTimer = null, tracking = false;
+  function distM(a, b) {  // metres between two {lat, lon}; plenty exact for a few hundred metres
+    const k = Math.PI / 180;
+    const x = (b.lon - a.lon) * k * Math.cos(((a.lat + b.lat) / 2) * k), y = (b.lat - a.lat) * k;
+    return Math.sqrt(x * x + y * y) * 6371000;
+  }
+  function better(f, b) {
+    if (!b) return true;
+    if (f.acc == null) return b.acc == null;
+    if (b.acc == null || f.acc <= b.acc) return true;
+    if (f.at - b.at > FRESH_MS) return true;
+    return distM(f, b) > f.acc + b.acc;
+  }
+
+  function showAccuracy() {
     const m = loc.acc == null ? "?" : loc.acc;
     if (loc.acc != null && loc.acc <= 75) setLoc("ok", "loc_ok", { m });
     else setLoc("warn", "loc_rough", { m });
   }
 
-  function browserLocation(quiet) {
-    if (!navigator.geolocation) { if (!quiet) setLoc("bad", "loc_denied"); return; }
-    navigator.geolocation.getCurrentPosition(
+  function gotLocation(lat, lon, acc, via) {
+    const f = { lat, lon, acc: acc == null ? null : Math.round(acc), at: Date.now() };
+    diag.loc = `${via} ±${f.acc == null ? "?" : f.acc} m`;
+    showDiag();
+    if (better(f, loc)) {
+      loc = f;
+      place.update();
+    }
+    showAccuracy();  // also clears a passing error: the kept fix still stands
+  }
+
+  function stopTracking() {
+    tracking = false;
+    clearTimeout(pollTimer);
+    if (watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
+
+  // A refused permission always shows; a passing timeout or "no fix right now" while tracking
+  // does not hide a position we already have.
+  function failed(why, refused) {
+    diag.loc = why;
+    showDiag();
+    if (refused || !loc) setLoc("bad", "loc_denied");
+  }
+
+  function watchBrowser() {
+    if (!navigator.geolocation) { tracking = false; return failed("no geolocation", true); }
+    watchId = navigator.geolocation.watchPosition(
       (p) => gotLocation(p.coords.latitude, p.coords.longitude, p.coords.accuracy, "browser"),
-      (e) => { diag.loc = `browser error ${e && e.code}`; showDiag(); if (!quiet || !loc) setLoc("bad", "loc_denied"); },
+      (e) => {
+        const refused = !!(e && e.code === 1);
+        if (refused) stopTracking();  // permission refused: the retry button starts again
+        failed(`browser error ${e && e.code}`, refused);
+      },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
   }
 
-  // Telegram's own location access (Bot API 8.0+) first: it works where the WebView blocks geolocation
+  // Telegram's own location access (Bot API 8.0+) first: it works where the WebView blocks geolocation.
+  // It has no "watch", so we ask again every POLL_MS while the app is open.
   function getLocation(quiet) {
+    if (tracking) return;
+    tracking = true;
     if (!quiet) setLoc("", "loc_wait");
     const lm = tg && tg.isVersionAtLeast && tg.isVersionAtLeast("8.0") ? tg.LocationManager : null;
-    if (!lm) return browserLocation(quiet);
+    if (!lm) return watchBrowser();
     const go = () => {
-      if (!lm.isLocationAvailable) return browserLocation(quiet);
-      lm.getLocation((d) => {
-        if (d) gotLocation(d.latitude, d.longitude, d.horizontal_accuracy, "telegram");
-        else { diag.loc = "telegram: no access"; showDiag(); if (!quiet || !loc) setLoc("bad", "loc_denied"); }
-      });
+      if (!lm.isLocationAvailable) return watchBrowser();
+      const ask = () => {
+        if (!tracking) return;
+        lm.getLocation((d) => {
+          if (!tracking) return;
+          if (d) {
+            gotLocation(d.latitude, d.longitude, d.horizontal_accuracy, "telegram");
+            pollTimer = setTimeout(ask, POLL_MS);
+          } else {
+            stopTracking();
+            failed("telegram: no access", true);
+          }
+        });
+      };
+      ask();
     };
     if (lm.isInited) go(); else lm.init(go);
   }
@@ -153,8 +225,93 @@
   $("loc-retry").addEventListener("click", () => {
     const lm = tg && tg.LocationManager;
     if (lm && lm.isInited && lm.isAccessRequested && !lm.isAccessGranted) lm.openSettings();  // needs a tap
-    else getLocation(false);
+    else { stopTracking(); getLocation(false); }
   });
+
+  // ------------------------------------------------------------------ place preview
+  // After the photo: a small map with the point, the phone's accuracy circle and the 10 m limit.
+  // The resident may drag the pin (or tap the map) up to PIN_MOVE_M from the phone's fix; the
+  // server checks the same limit and keeps both points. If the map cannot start, sending works
+  // exactly as before (the phone's fix, no map).
+  const place = (() => {
+    const box = $("place"), note = $("place-note");
+    let map = null, pin = null, acc = null, limit = null, anchor = null, at = null, on = false;
+    function make() {
+      if (map) return true;
+      if (!window.L) return false;
+      try {
+        map = L.map("pmap", { dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false,
+          keyboard: false, zoomSnap: 0.5 }).setView([56.9496, 24.1052], 13);
+        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+          { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
+        limit = L.circle([0, 0], { radius: PIN_MOVE_M, color: "#545e6b", weight: 1, dashArray: "4 4", fill: false, interactive: false });
+        acc = L.circle([0, 0], { radius: 1, color: "#0b3a6b", weight: 1, fillColor: "#0b3a6b", fillOpacity: .12, interactive: false });
+        const icon = L.divIcon({ className: "", html: '<div class="pin"></div>', iconSize: [28, 28], iconAnchor: [14, 28] });
+        pin = L.marker([0, 0], { draggable: true, icon, keyboard: false });
+        pin.on("drag", () => place.moveTo(pin.getLatLng(), false));
+        pin.on("dragend", () => place.moveTo(pin.getLatLng(), true));
+        map.on("click", (e) => place.moveTo(e.latlng, true));
+        return true;
+      } catch (e) {
+        diag.map = (e && e.message) || "map error";
+        showDiag();
+        map = null;
+        return false;
+      }
+    }
+    function draw(fit) {
+      if (!anchor) return;
+      limit.setLatLng([anchor.lat, anchor.lon]).addTo(map);
+      acc.setLatLng([anchor.lat, anchor.lon]).setRadius(anchor.acc || 1).addTo(map);
+      pin.setLatLng([at.lat, at.lon]).addTo(map);
+      if (fit) {
+        const r = Math.max(anchor.acc || 0, PIN_MOVE_M) + 6;
+        map.fitBounds(L.latLng(anchor.lat, anchor.lon).toBounds(2 * r), { maxZoom: 19, padding: [8, 8] });
+      }
+    }
+    function say() {
+      const d = anchor && at ? distM(anchor, at) : 0;
+      note.textContent = d >= 1 ? t("place_moved", { m: Math.round(d) }) : t("place_hint");
+    }
+    return {
+      show() {
+        on = true;
+        box.hidden = false;
+        if (!make()) { box.hidden = true; on = false; return; }
+        map.invalidateSize();  // the box was hidden while Leaflet measured it
+        anchor = null; at = null;
+        say();
+        this.update();
+      },
+      hide() { on = false; box.hidden = true; anchor = null; at = null; },
+      // a better fix arrived: follow it until the resident moves the pin themselves
+      update() {
+        if (!on || !map || !loc) return;
+        if (anchor && at && distM(anchor, at) >= 1) return;
+        anchor = loc;
+        at = { lat: loc.lat, lon: loc.lon };
+        draw(true);
+        say();
+      },
+      moveTo(ll, final) {
+        if (!anchor) return;
+        let p = { lat: ll.lat, lon: ll.lng };
+        const d = distM(anchor, p);
+        const over = d > PIN_MOVE_M;
+        if (over) {  // stop at the limit, a hair inside so rounding never pushes it over
+          const k = (PIN_MOVE_M * 0.98) / d;
+          p = { lat: anchor.lat + (p.lat - anchor.lat) * k, lon: anchor.lon + (p.lon - anchor.lon) * k };
+        }
+        at = p;
+        if (over || final) pin.setLatLng([p.lat, p.lon]);
+        if (final) pin.addTo(map);
+        say();
+        if (over) note.textContent = t("place_limit");
+      },
+      // what to send: the pin and the phone's own fix it was placed from (null: no map, send loc as before)
+      point() { return on && anchor && at ? { lat: at.lat, lon: at.lon, gps: anchor } : null; },
+    };
+  })();
 
   // ------------------------------------------------------------------ camera
   async function startCamera() {
@@ -196,8 +353,10 @@
     shutter.hidden = true;
     afterShot.hidden = false;
     $("fallback-row").hidden = true;
+    $("frame").classList.add("small");
     if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
-    getLocation(true);  // refresh the position for the moment of the photo
+    getLocation(true);  // no-op while it is already following the position
+    place.show();
   }
 
   shutter.addEventListener("click", () => {
@@ -215,6 +374,8 @@
     shot = null;
     preview.hidden = true;
     afterShot.hidden = true;
+    place.hide();
+    $("frame").classList.remove("small");
     if (stream) { video.hidden = false; shutter.hidden = false; }
     else { $("fallback-row").hidden = false; camMsg.hidden = false; video.hidden = false; }
   });
@@ -238,9 +399,12 @@
     sendBtn.textContent = t("sending");
     const fd = new FormData();
     fd.append("photo", shot.blob, shot.capture === "live" ? "camera.jpg" : (shot.blob.name || "photo.jpg"));
-    fd.append("lat", loc.lat);
-    fd.append("lon", loc.lon);
-    if (loc.acc != null) fd.append("accuracy", loc.acc);
+    const p = place.point();  // the pin on the preview map and the phone's fix it came from
+    const fix = p ? p.gps : loc;
+    fd.append("lat", p ? p.lat : loc.lat);
+    fd.append("lon", p ? p.lon : loc.lon);
+    if (p) { fd.append("gps_lat", fix.lat); fd.append("gps_lon", fix.lon); }
+    if (fix.acc != null) fd.append("accuracy", fix.acc);
     fd.append("capture", shot.capture);
     fd.append("tg_pass", PASS);
     try {
@@ -248,7 +412,8 @@
       const body = await r.json().catch(() => ({}));
       if (r.status === 201) return done(body);
       const code = body.detail && body.detail.code;
-      say(code === "outside_area" ? "err_area" : r.status === 429 ? "err_many" : code === "bad_pass" ? "err_pass" : "err_send");
+      say(code === "outside_area" ? "err_area" : r.status === 429 ? "err_many" : code === "bad_pass" ? "err_pass"
+        : code === "moved_too_far" ? "err_moved" : "err_send");
     } catch (e) {
       say("err_send");
     }
@@ -263,6 +428,7 @@
     sent = !rejected;
     if (stream) stream.getTracks().forEach((tr) => tr.stop());
     stream = null;
+    if (!rejected) stopTracking();  // done: stop asking the phone for its position
     $("shoot").hidden = true;
     $("done").hidden = false;
     $("res-icon").className = "mark " + (rejected ? "reject" : rel === "review" ? "review" : "ok");
@@ -281,6 +447,8 @@
     $("shoot").hidden = false;
     preview.hidden = true;
     afterShot.hidden = true;
+    place.hide();
+    $("frame").classList.remove("small");
     video.hidden = false;
     sendBtn.disabled = false;
     sendBtn.textContent = t("send");

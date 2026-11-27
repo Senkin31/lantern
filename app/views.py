@@ -197,6 +197,8 @@ class Views:
                 "counted": bool(r["counted"]), "duplicate": bool(r["duplicate"]),
                 "moderated_by": r["moderated_by"], "device": (r["device_id"] or "")[:8],
                 "same_photo_as": r["reuse_of"], "registration_no": r["registration_no"],
+                # Mini App: the phone's own fix and how far the resident moved the pin from it
+                "gps_lat": r["gps_lat"], "gps_lon": r["gps_lon"], "pin_moved_m": r["pin_moved_m"],
             })
         return d
 

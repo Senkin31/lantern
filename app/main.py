@@ -24,7 +24,7 @@ from . import tgapp
 from .config import settings
 from .db import Database
 from .engine import LOCATION_SOURCES, PASSABLE, PLACE_TYPES, REPORT_HAZARDS, Engine, RuleError
-from .registry import Registry
+from .registry import Registry, haversine_m
 from .segments import Sidewalks
 from .spam import SpamGuard, photo_hashes
 from .timeutil import clock, fmt_ts, parse_ts
@@ -216,7 +216,8 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
                    ip_h: str, trusted: bool, chan: str, comment: str = "", passable: Optional[str] = None,
                    hazard: Optional[str] = None, place_type: Optional[str] = None,
                    location_source: Optional[str] = None, timestamp: Optional[str] = None,
-                   registration_no: Optional[str] = None, capture: Optional[str] = None) -> dict:
+                   registration_no: Optional[str] = None, capture: Optional[str] = None,
+                   gps: Optional[tuple] = None) -> dict:
         """Spam checks, /analyze, storing: shared by the web form, the bot and the Telegram Mini App."""
         refused = guard.check(device, ip_h, trusted)
         if refused:
@@ -259,7 +260,9 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         rep = engine.ingest_report(
             {"lat": lat, "lon": lon, "passable": passable, "passable_by": passable_by, "hazard": hazard,
              "place_type": place_type, "loc_source": location_source, "capture": capture,
-             "comment": comment, "device_id": device, "timestamp": timestamp}, analysis, name, chan,
+             "comment": comment, "device_id": device, "timestamp": timestamp,
+             "gps_lat": gps[0] if gps else None, "gps_lon": gps[1] if gps else None,
+             "pin_moved_m": gps[2] if gps else None}, analysis, name, chan,
             photo_sha256=sha, photo_dhash=dhash, ip_hash=ip_h, reuse_of=reuse_of, registration_no=registration_no)
         if rep["relevant"] == "reject" or rep["duplicate"] or rep["reuse_of"]:
             guard.strike(device)  # repeated rejects/duplicates -> sender muted for a day
@@ -335,20 +338,34 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         accuracy: Optional[float] = Form(None, ge=0),  # metres, from the phone
         capture: str = Form("live"),                    # live: in-app camera; picker: the phone's file dialog
         tg_pass: str = Form(...),
+        gps_lat: Optional[float] = Form(None, ge=-90, le=90),    # the phone's own fix, when lat/lon is a pin
+        gps_lon: Optional[float] = Form(None, ge=-180, le=180),  # the resident moved on the preview map
     ):
         """Telegram Mini App: the photo was taken in the app just now, the place is the phone's position.
-        The sender is the person the bot signed the pass for; time is the server's, not the phone's."""
+        The sender is the person the bot signed the pass for; time is the server's, not the phone's.
+        On the preview map the resident may move the pin up to PIN_MOVE_M from the phone's fix (gps_lat,
+        gps_lon); a pin further away is refused. Both points are kept and the inspector sees the move."""
         device = tgapp.check_pass(tg_pass)
         if device is None:
             raise HTTPException(403, detail={"code": "bad_pass", "message": "open the form again from the Lantern bot"})
         if capture not in ("live", "picker"):
             raise HTTPException(422, "capture must be live or picker")
+        if (gps_lat is None) != (gps_lon is None):
+            raise HTTPException(422, detail={"code": "bad_fix", "message": "send gps_lat and gps_lon together"})
+        gps = None
+        if gps_lat is not None:
+            moved = haversine_m(gps_lat, gps_lon, lat, lon)
+            # 1.5 m of slack: the map and this formula round a little differently
+            if moved > settings.pin_move_m + 1.5:
+                raise HTTPException(422, detail={"code": "moved_too_far",
+                                                 "message": f"the pin may move at most {settings.pin_move_m:g} m"})
+            gps = (gps_lat, gps_lon, round(moved, 1))
         data, ctype = await read_photo(photo)
         # a fix worse than GPS_ACCURACY_M (wifi / cell tower guess) does not count as an exact place
         loc = "gps" if accuracy is not None and accuracy <= settings.gps_accuracy_m else "coarse"
         return await take(data=data, ctype=ctype, filename=photo.filename, lat=lat, lon=lon, device=device,
                           ip_h=guard.ip_hash(sender_ip(request)), trusted=False, chan="telegram",
-                          location_source=loc, capture=capture)
+                          location_source=loc, capture=capture, gps=gps)
 
     @app.get("/reports/ticket/{ticket}", tags=["resident"])
     def ticket_status(ticket: str):

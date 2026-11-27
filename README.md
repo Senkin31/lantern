@@ -10,21 +10,43 @@ Built at [RobotHack 2026](https://rh26.hacktribe.co/) (Riga, 24–28 November 20
 
 - [ ] Detects snow blocking the walkway on fixed-camera views
 - [ ] Flags possible ice for dispatcher review
-- [ ] Accepts resident photo reports through a web form
-- [ ] Merges signals about the same place into one alert and ranks it by urgency
-- [ ] Shows alerts on a map with before/after frames
+- [x] Accepts resident photo reports through a web form and a Telegram bot
+- [x] Merges signals about the same place into one alert and ranks it by urgency
+- [x] Shows alerts on a map with before/after frames, and paints the whole street section when a camera or several residents report it (OpenStreetMap sidewalks)
+- [x] Sends alerts to the district's contractor only after the clearing deadline (08:00 / 22:00 Riga time, as in the council's regulation), and checks their "cleared" against the next camera frame
+- [x] Suggests a defect act or a notice, tracks the 24 h fix deadline, and builds a printable evidence package for the inspector
+- [x] Rejects spam: one vote per person per place, repeated photos don't count, rate limits
+- [x] Measures contractor response time and exports alerts as GeoJSON/CSV
 
 ## Getting started
 
-_TODO: requirements and how to run the prototype._
+Requirements: Python 3.11+.
 
 ```bash
-# TODO
+pip install -r requirements.txt
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
+
+Then open http://127.0.0.1:8000/inspector (city inspector), http://127.0.0.1:8000/contractor?contractor=A (contractor, phone) and http://127.0.0.1:8000/report (resident form). On Windows, `app\start.ps1` does all of this in one step.
+
+To replay the mock day (unzip `lantern_mock.zip` into the repo root first):
+
+```bash
+python -m app.demo --auto-done
+```
+
+More: [app/README.md](app/README.md) (backend, rules, API), [app/bot/README.md](app/bot/README.md) (Telegram bot), [docs/demo.md](docs/demo.md) (Demo Day walkthrough).
 
 ## Project structure
 
-_TODO_
+```
+app/      backend (FastAPI + SQLite) and the inspector, contractor and resident screens; Telegram bot in app/bot
+vision/   model, zones, /analyze
+tools/    frame collector, zone labelling
+config/   cameras.json (vision side), contractors.json (app side)
+mock/     stub signals and frames for building the app without the model (images are not committed)
+docs/     API contract, demo walkthrough, slides
+```
 
 ## Data
 

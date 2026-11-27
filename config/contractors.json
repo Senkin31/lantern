@@ -1,0 +1,21 @@
+{
+  "note": "Districts = Riga neighbourhoods (apkaimes, data.gov.lv, CC BY 4.0) for Riga; demo-* = the Finnish demo cameras. Contractors are fictional.",
+  "contractors": [
+    {
+      "id": "A",
+      "name": "Contractor A",
+      "districts": [
+        "Vecpilsēta",
+        "demo-centre"
+      ]
+    },
+    {
+      "id": "B",
+      "name": "Contractor B",
+      "districts": [
+        "Centrs",
+        "demo-north"
+      ]
+    }
+  ]
+}

@@ -29,3 +29,11 @@ dist/
 Thumbs.db
 .vscode/
 .idea/
+
+# Lantern app
+data/
+# SkyFinder research images from the mock pack: never commit (see mock/README.md)
+mock/frames/
+mock/crops/
+mock/photos/
+.pytest_cache/

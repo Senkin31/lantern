@@ -42,7 +42,7 @@ import httpx
 
 from ..config import ROOT, env
 from ..tgapp import make_pass
-from .i18n import LANG_NAMES, LANGS, t
+from .i18n import DROPPED_LANGS, LANG_NAMES, LANGS, t
 
 log = logging.getLogger("lantern.bot")
 
@@ -78,6 +78,15 @@ TRACK_DAYS = 7
 # the text buttons under the message field send their label; treat them as the commands
 BUTTON_COMMANDS = {t(key, L): cmd for key, cmd in (("btn_status", "/status"), ("btn_lang", "/lang"),
                                                     ("btn_help", "/help")) for L in LANGS}
+# chats that still show the old Russian button bar (until the bot sends them the new one)
+BUTTON_COMMANDS.update({"📋 Мои заявки": "/status", "🌐 Язык": "/lang", "❓ Помощь": "/help"})
+
+
+def known_lang(code) -> str:
+    """The chat's language if the bot still speaks it. Chats that had Russian get English."""
+    if code in LANGS:
+        return code
+    return "en" if code else "lv"
 STATUS_EVERY = 30.0
 NOTIFY_STATUSES = ("open", "done_reported", "reopened", "verified", "cleared_in_time")
 
@@ -182,7 +191,7 @@ class LanternBot:
         return hashlib.sha256(f"{self.state.salt}:{user_id}".encode()).hexdigest()[:16]
 
     def lang(self, chat_id) -> str:
-        return self.state.chat(chat_id).get("lang") or "lv"
+        return known_lang(self.state.chat(chat_id).get("lang"))
 
     def send(self, chat_id, text: str, markup: Optional[dict] = None) -> None:
         params = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
@@ -503,6 +512,13 @@ class LanternBot:
                                                **extra}))
             calls.append(("setMyShortDescription", {"short_description": t("bot_short_private" if private
                                                                            else "bot_short", code), **extra}))
+        for L in DROPPED_LANGS:  # a language the bot no longer speaks: its own menu and texts go
+            extra = {"language_code": L}
+            calls.append(("deleteMyCommands", dict(extra)))
+            calls += [("deleteMyCommands", {"scope": {"type": "chat", "chat_id": uid}, **extra})
+                      for uid in sorted(self.allowed | self.logged_in())]
+            calls.append(("setMyDescription", {"description": "", **extra}))
+            calls.append(("setMyShortDescription", {"short_description": "", **extra}))
         for method, params in calls:
             try:
                 self.tg.call(method, **params)
@@ -636,7 +652,7 @@ class LanternBot:
         cutoff = _now() - timedelta(days=TRACK_DAYS)
         changed = False
         for chat_id, chat in list(self.state.data["chats"].items()):
-            L = chat.get("lang") or "lv"
+            L = known_lang(chat.get("lang"))
             for item in chat.get("tickets", []):
                 if item.get("done"):
                     continue

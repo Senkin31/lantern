@@ -210,8 +210,13 @@ def test_bot_buttons_menu_and_description(make_client, tmp_path):
     fake.sent.clear()
     bot.setup_profile()
     sent = [(m, p.get("language_code")) for m, p in fake.sent]
-    for method in ("setMyCommands", "setMyDescription", "setMyShortDescription"):
+    for method in ("setMyCommands",):
+        assert {code for m, code in sent if m == method} == {None, "lv", "en"}
+    for method in ("setMyDescription", "setMyShortDescription"):  # Russian is no longer offered: emptied
         assert {code for m, code in sent if m == method} == {None, "lv", "en", "ru"}
+        ru = next(p for m, p in fake.sent if m == method and p.get("language_code") == "ru")
+        assert set(ru.values()) == {"", "ru"}
+    assert ("deleteMyCommands", "ru") in sent
     en = next(p for m, p in fake.sent if m == "setMyCommands" and p.get("language_code") == "en")
     assert [c["command"] for c in en["commands"]] == ["start", "status", "lang", "help"]
 
@@ -226,6 +231,20 @@ def test_chat_mode_has_the_buttons_too(make_client, tmp_path):
     rows = last_markup(fake)["keyboard"]
     assert len(rows) == 1 and rows[0][0]["text"] == "📋 My reports"
     assert "Send one photo" in fake.texts(77)[-1]
+
+
+def test_a_chat_that_had_russian_gets_english(make_client, tmp_path):
+    """Russian was dropped: LV and EN only. Old chats and their old button bar keep working, in English."""
+    client, _, _ = setup(make_client)
+    fake = FakeTelegram()
+    tg = Telegram("TOKEN", "http://tg.test", client=httpx.Client(transport=httpx.MockTransport(fake.handler)))
+    bot = LanternBot(tg, client, State(tmp_path / "s.json"))
+    bot.state.chat(88)["lang"] = "ru"                                   # chose Russian before the change
+    bot.handle_update(fake.msg(88, text="📋 Мои заявки"))              # the old Russian button
+    assert "You have no tickets yet" in fake.texts(88)[-1]
+    bot.handle_update(fake.msg(89, text="/start"))
+    langs = [b["callback_data"] for row in last_markup(fake)["inline_keyboard"] for b in row]
+    assert langs == ["lang:lv", "lang:en"]                              # no Russian on offer
 
 
 # ---------------------------------------------------------------- private bot
@@ -255,11 +274,18 @@ def test_private_bot_answers_only_allowed_people(make_client, tmp_path):
     fake.sent.clear()
     bot.setup_profile()
     methods = [m for m, p in fake.sent]
-    assert methods.count("deleteMyCommands") == 4                       # strangers see no command menu
+    deleted = [(p.get("language_code"), (p.get("scope") or {}).get("chat_id")) for m, p in fake.sent
+               if m == "deleteMyCommands"]
+    # strangers see no command menu (LV, EN, any other app language); Russian is gone, also from the owner's chat
+    assert sorted(deleted, key=str) == sorted([(None, None), ("lv", None), ("en", None), ("ru", None), ("ru", owner)],
+                                              key=str)
+    assert methods.count("deleteMyCommands") == 5
     scoped = [p for m, p in fake.sent if m == "setMyCommands"]
     assert scoped and all(p["scope"] == {"type": "chat", "chat_id": owner} for p in scoped)
-    about = [p["description"] for m, p in fake.sent if m == "setMyDescription"]
-    assert all("private" in d or "privāts" in d or "приватный" in d for d in about)
+    assert {p.get("language_code") for p in scoped} == {None, "lv", "en"}
+    about = [p for m, p in fake.sent if m == "setMyDescription"]
+    assert all("private" in p["description"] or "privāts" in p["description"] for p in about if p.get("language_code") != "ru")
+    assert [p["description"] for p in about if p.get("language_code") == "ru"] == [""]  # Russian text removed
 
 
 def test_public_bot_when_no_allowlist(make_client, tmp_path):

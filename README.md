@@ -10,7 +10,7 @@ Built at [RobotHack 2026](https://rh26.hacktribe.co/) (Riga, 24–28 November 20
 
 - [ ] Detects snow blocking the walkway on fixed-camera views
 - [ ] Flags possible ice for dispatcher review
-- [x] Accepts resident photo reports through a web form and a Telegram bot ([@lantern_riga_bot](https://t.me/lantern_riga_bot)) with a Mini App: live camera, the phone's own location, a map preview
+- [x] Accepts resident photo reports through a web form and a Telegram bot with a Mini App: live camera, the phone's own location, a map preview
 - [x] Merges signals about the same place into one alert and ranks it by urgency
 - [x] Shows alerts on a map with before/after frames, and paints the whole street section when a camera or several residents report it (OpenStreetMap sidewalks)
 - [x] Sends alerts to the district's contractor only after the clearing deadline (08:00 / 22:00 Riga time, as in the council's regulation), and checks their "cleared" against the next camera frame
@@ -29,9 +29,11 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 Then open http://127.0.0.1:8000/inspector (city inspector), http://127.0.0.1:8000/contractor?contractor=A (contractor, phone) and http://127.0.0.1:8000/report (resident form). On Windows, `app\start.ps1` does all of this in one step.
 
-**Telegram bot:** [@lantern_riga_bot](https://t.me/lantern_riga_bot). Open it and press **Start**.
-- It is **private**: it first asks for the team login and password. They are not in this repository, so ask the team.
-- It answers only while it runs next to the app: `python -m app.bot.telegram_bot` (token in `.env`, see [app/bot/README.md](app/bot/README.md)).
+**No login by default.** Without `LANTERN_PASSWORD` in `.env` (as in `.env.example`) the screens open straight away. Set `LANTERN_USER` / `LANTERN_PASSWORD` to put the screens and the bot behind a login.
+
+**Telegram bot:** run your own next to the app.
+- Create a bot with @BotFather, put its token in `.env` as `TELEGRAM_BOT_TOKEN`, then start `python -m app.bot.telegram_bot` (see [app/bot/README.md](app/bot/README.md)).
+- Without a password it answers everyone. With `LANTERN_PASSWORD` set it asks for the login and password first.
 - Its **📸 Report a sidewalk** button (the Mini App) needs the app reachable over https, for example through a cloudflared tunnel. See [the Mini App section](app/README.md#telegram-mini-app-photo-taken-now-the-phones-own-location).
 - Languages: Latvian and English.
 

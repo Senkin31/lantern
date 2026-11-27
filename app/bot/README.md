@@ -24,7 +24,7 @@ The bot never calls the model itself. Only reports that the model accepts become
 
 The bot uses long polling, so neither the bot nor the app needs a public address.
 
-Commands: `/start`, `/status` (my tickets), `/lang` (LV / EN / RU), `/cancel`, `/help`. A user can also just send a photo to start a report.
+Commands: `/start`, `/status` (my tickets), `/lang` (LV / EN), `/cancel`, `/help`. A user can also just send a photo to start a report.
 
 **Location from a computer.** Telegram Desktop and Telegram Web cannot send a location pin, so at the location step the bot also takes typed coordinates (`56.9496, 24.1052`) or a map link (Google Maps `@lat,lon` / `?q=lat,lon`, OpenStreetMap `#map=z/lat/lon` or `mlat=…&mlon=…`).
 

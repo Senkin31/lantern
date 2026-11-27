@@ -248,6 +248,18 @@ def test_a_chat_that_had_russian_gets_english(make_client, tmp_path):
 
 
 # ---------------------------------------------------------------- private bot
+def test_web_form_and_mini_app_offer_latvian_and_english_only(make_client):
+    """Russian was dropped from the resident pages too: no RU button, no Russian texts."""
+    import re
+    client, _, _ = setup(make_client)
+    page = client.get("/report").text
+    assert 'data-lang="lv"' in page and 'data-lang="en"' in page and 'data-lang="ru"' not in page
+    for js in ("/assets/js/report.js", "/assets/js/tg.js"):
+        src = client.get(js).text
+        assert not re.search("[Ѐ-ӿ]", src), js                 # no Cyrillic text left
+        assert not re.search(r"^\s+ru: \{", src, re.M), js                # no Russian text block
+
+
 def test_private_bot_answers_only_allowed_people(make_client, tmp_path):
     client, engine, _ = setup(make_client)
     fake = FakeTelegram()

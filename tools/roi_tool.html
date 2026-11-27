@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Lantern: разметка камер (cameras.json)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: #15181d; color: #e6e6e6; display: flex; height: 100vh; }
+  #side { width: 360px; padding: 14px; overflow-y: auto; background: #1d2128; border-right: 1px solid #2c323c; }
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #bar { padding: 8px 12px; background: #1d2128; border-bottom: 1px solid #2c323c; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  #wrap { flex: 1; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 12px; }
+  #drop { border: 2px dashed #3a4250; border-radius: 8px; padding: 40px; text-align: center; color: #8a93a3; margin: auto; }
+  canvas { cursor: crosshair; max-width: 100%; display: none; }
+  h2 { font-size: 15px; margin: 14px 0 8px; color: #9ec5ff; }
+  label { display: block; margin: 6px 0 2px; color: #aab2bf; font-size: 12px; }
+  input, select, textarea { width: 100%; padding: 6px 8px; background: #11141a; color: #e6e6e6; border: 1px solid #343b47; border-radius: 4px; font: inherit; }
+  textarea { height: 50px; resize: vertical; }
+  .row { display: flex; gap: 8px; }
+  .row > div { flex: 1; }
+  button { padding: 6px 10px; background: #2b5cab; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font: inherit; }
+  button.sec { background: #343b47; }
+  button.danger { background: #8a2b2b; }
+  button:disabled { opacity: .4; cursor: default; }
+  .hint { color: #8a93a3; font-size: 12px; }
+  .zone { display: flex; align-items: center; gap: 6px; padding: 4px 6px; background: #11141a; border-radius: 4px; margin: 4px 0; }
+  .sw { width: 12px; height: 12px; border-radius: 2px; flex: none; }
+  .zone span { flex: 1; }
+  .cam { padding: 6px 8px; border-radius: 4px; margin: 3px 0; background: #11141a; cursor: pointer; }
+  .cam.active { outline: 1px solid #2b5cab; }
+  .cam small { color: #8a93a3; }
+  kbd { background: #343b47; border-radius: 3px; padding: 0 4px; font-size: 11px; }
+  #status { margin-left: auto; color: #8a93a3; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="side">
+  <div class="row">
+    <button id="btnLoadJson" class="sec">Открыть cameras.json</button>
+    <button id="btnSave">Сохранить cameras.json</button>
+  </div>
+  <input type="file" id="fileJson" accept=".json,application/json" hidden>
+  <p class="hint">Файл сохраняется в «Загрузки». Положи его в репозиторий как <b>config/cameras.json</b> (папка data/ не попадает в git, а реестр камер нужен обоим).</p>
+
+  <h2>Камеры в файле</h2>
+  <div id="camList"><div class="hint">Пока пусто. Открой кадр справа и заполни поля.</div></div>
+  <button id="btnNew" class="sec" style="margin-top:6px">+ Новая камера</button>
+
+  <h2>Камера</h2>
+  <div class="row">
+    <div><label>ID камеры</label><input id="camId" placeholder="C1254701"></div>
+    <div><label>Источник</label>
+      <select id="source">
+        <option value="fintraffic">fintraffic</option>
+        <option value="skyfinder">skyfinder</option>
+        <option value="windy">windy</option>
+        <option value="own">own (своя съёмка)</option>
+        <option value="riga">riga</option>
+        <option value="other">other</option>
+      </select></div>
+  </div>
+  <label>Название</label><input id="name" placeholder="Kajaani, Tie 6">
+  <div class="row">
+    <div><label>Широта</label><input id="lat" placeholder="64.2222"></div>
+    <div><label>Долгота</label><input id="lon" placeholder="27.7278"></div>
+  </div>
+  <label>Тип места (влияет на срочность)</label>
+  <select id="placeType">
+    <option value="sidewalk">обычный тротуар</option>
+    <option value="crossing">пешеходный переход / пандус</option>
+    <option value="stop">остановка</option>
+    <option value="path">пешеходная или велодорожка</option>
+    <option value="square">площадь</option>
+  </select>
+  <label style="display:flex;gap:6px;align-items:center;margin-top:8px">
+    <input type="checkbox" id="nearSensitive" style="width:auto"> рядом школа, больница или поликлиника
+  </label>
+  <label>Эталонный чистый кадр (путь)</label><input id="refFrame" placeholder="fintraffic/C1254701/20261124T120000Z.jpg">
+  <label>Заметки</label><textarea id="notes" placeholder="ракурс, что видно, где вал от снегоочистителя..."></textarea>
+
+  <h2>Зоны на кадре</h2>
+  <label>Тип следующей зоны</label>
+  <select id="zoneLabel">
+    <option value="sidewalk">sidewalk — тротуар</option>
+    <option value="crossing">crossing — переход</option>
+    <option value="ramp">ramp — пандус / съезд</option>
+    <option value="path">path — дорожка</option>
+    <option value="stop">stop — площадка остановки</option>
+  </select>
+  <div id="zoneList"></div>
+  <p class="hint">
+    Клик — точка. Клик рядом с первой точкой или <kbd>Enter</kbd> — замкнуть зону.<br>
+    <kbd>Backspace</kbd> — убрать последнюю точку, <kbd>Esc</kbd> — отменить текущую зону.<br>
+    Обводи только тротуар, по которому ходят люди, без проезжей части.
+  </p>
+  <div class="row">
+    <button id="btnApply">Записать камеру в список</button>
+  </div>
+  <p class="hint">После «Записать» не забудь «Сохранить cameras.json».</p>
+</div>
+
+<div id="main">
+  <div id="bar">
+    <button id="btnImg" class="sec">Открыть кадр…</button>
+    <input type="file" id="fileImg" accept="image/*" hidden>
+    <label style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="showMask" style="width:auto"> показать маску</label>
+    <span id="status">Перетащи кадр сюда или нажми «Открыть кадр…»</span>
+  </div>
+  <div id="wrap">
+    <div id="drop">Перетащи сюда кадр камеры (JPG/PNG)<br><span class="hint">Лучше эталонный: день, без снега, хорошая видимость</span></div>
+    <canvas id="cv"></canvas>
+  </div>
+</div>
+
+<script>
+"use strict";
+const COLORS = { sidewalk: "#3fa9f5", crossing: "#ffd400", ramp: "#ff7a00", path: "#4cd964", stop: "#d96bff" };
+const $ = (id) => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d");
+
+let data = { version: 1, cameras: [] };
+let img = null, imgName = "";
+let zones = [];        // [{label, points:[[x,y],...]}] in image pixels
+let current = [];      // points of zone being drawn
+let editingIndex = -1; // index in data.cameras or -1 for new
+
+function status(t) { $("status").textContent = t; }
+
+// ---------- image ----------
+function loadImageFile(file) {
+  if (!file || !file.type.startsWith("image/")) return;
+  const url = URL.createObjectURL(file);
+  const im = new Image();
+  im.onload = () => {
+    img = im; imgName = file.name;
+    cv.width = im.naturalWidth; cv.height = im.naturalHeight;
+    cv.style.display = "block"; $("drop").style.display = "none";
+    if (!$("refFrame").value) $("refFrame").value = guessRefPath(file.name);
+    if (!$("camId").value) { const m = file.name.match(/C\d{7}/); if (m) $("camId").value = m[0]; }
+    status(`${file.name} — ${im.naturalWidth}×${im.naturalHeight}`);
+    draw();
+  };
+  im.src = url;
+}
+function guessRefPath(fname) {
+  const id = $("camId").value || (fname.match(/C\d{7}/) || [""])[0];
+  const src = $("source").value;
+  return id ? `${src}/${id}/${fname}` : `${src}/${fname}`;
+}
+$("btnImg").onclick = () => $("fileImg").click();
+$("fileImg").onchange = (e) => loadImageFile(e.target.files[0]);
+$("wrap").addEventListener("dragover", (e) => e.preventDefault());
+$("wrap").addEventListener("drop", (e) => { e.preventDefault(); loadImageFile(e.dataTransfer.files[0]); });
+
+// ---------- drawing ----------
+function toImg(e) {
+  const r = cv.getBoundingClientRect();
+  return [Math.round((e.clientX - r.left) * cv.width / r.width), Math.round((e.clientY - r.top) * cv.height / r.height)];
+}
+function scaleFactor() { const r = cv.getBoundingClientRect(); return r.width ? cv.width / r.width : 1; }
+
+function draw() {
+  if (!img) return;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.drawImage(img, 0, 0);
+  const s = scaleFactor();
+  if ($("showMask").checked) {
+    ctx.fillStyle = "rgba(0,0,0,0.65)"; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.save(); ctx.beginPath();
+    for (const z of zones) poly(z.points);
+    ctx.clip(); ctx.drawImage(img, 0, 0); ctx.restore();
+  }
+  for (const z of zones) {
+    const c = COLORS[z.label] || "#fff";
+    ctx.beginPath(); poly(z.points); ctx.closePath();
+    ctx.fillStyle = c + "40"; ctx.fill();
+    ctx.lineWidth = 2 * s; ctx.strokeStyle = c; ctx.stroke();
+  }
+  if (current.length) {
+    const c = COLORS[$("zoneLabel").value] || "#fff";
+    ctx.beginPath(); poly(current);
+    ctx.lineWidth = 2 * s; ctx.strokeStyle = c; ctx.setLineDash([6 * s, 4 * s]); ctx.stroke(); ctx.setLineDash([]);
+    current.forEach(([x, y], i) => {
+      ctx.beginPath(); ctx.arc(x, y, (i === 0 ? 6 : 4) * s, 0, Math.PI * 2);
+      ctx.fillStyle = i === 0 ? "#fff" : c; ctx.fill();
+    });
+  }
+}
+function poly(pts) { pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); }
+
+cv.addEventListener("click", (e) => {
+  if (!img) return;
+  const p = toImg(e);
+  if (current.length >= 3) {
+    const [x0, y0] = current[0];
+    if (Math.hypot(p[0] - x0, p[1] - y0) < 12 * scaleFactor()) { finishZone(); return; }
+  }
+  current.push(p); draw();
+});
+document.addEventListener("keydown", (e) => {
+  if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if (e.key === "Enter") finishZone();
+  else if (e.key === "Backspace") { e.preventDefault(); current.pop(); draw(); }
+  else if (e.key === "Escape") { current = []; draw(); }
+});
+$("showMask").onchange = draw;
+$("zoneLabel").onchange = draw;
+
+function finishZone() {
+  if (current.length < 3) { status("В зоне должно быть минимум 3 точки"); return; }
+  zones.push({ label: $("zoneLabel").value, points: current });
+  current = []; renderZones(); draw();
+}
+function renderZones() {
+  const el = $("zoneList"); el.innerHTML = "";
+  zones.forEach((z, i) => {
+    const d = document.createElement("div"); d.className = "zone";
+    d.innerHTML = `<div class="sw" style="background:${COLORS[z.label]}"></div><span>${z.label} — ${z.points.length} точек</span>`;
+    const b = document.createElement("button"); b.className = "danger"; b.textContent = "×";
+    b.onclick = () => { zones.splice(i, 1); renderZones(); draw(); };
+    d.appendChild(b); el.appendChild(d);
+  });
+}
+
+// ---------- camera form ----------
+function readForm() {
+  const num = (v) => (v.trim() === "" ? null : Number(v.replace(",", ".")));
+  return {
+    camera_id: $("camId").value.trim(),
+    source: $("source").value,
+    name: $("name").value.trim(),
+    lat: num($("lat").value),
+    lon: num($("lon").value),
+    place_type: $("placeType").value,
+    near_sensitive: $("nearSensitive").checked,
+    reference_frame: $("refFrame").value.trim(),
+    image_size: img ? [cv.width, cv.height] : null,
+    zones: zones.map((z) => ({
+      label: z.label,
+      points: z.points,
+      points_norm: img ? z.points.map(([x, y]) => [+(x / cv.width).toFixed(5), +(y / cv.height).toFixed(5)]) : null,
+    })),
+    notes: $("notes").value.trim(),
+  };
+}
+function fillForm(c) {
+  $("camId").value = c.camera_id || ""; $("source").value = c.source || "fintraffic";
+  $("name").value = c.name || ""; $("lat").value = c.lat ?? ""; $("lon").value = c.lon ?? "";
+  $("placeType").value = c.place_type || "sidewalk"; $("nearSensitive").checked = !!c.near_sensitive;
+  $("refFrame").value = c.reference_frame || ""; $("notes").value = c.notes || "";
+  zones = (c.zones || []).map((z) => ({ label: z.label, points: z.points.map((p) => [...p]) }));
+  current = []; renderZones();
+  if (img && c.image_size && (c.image_size[0] !== cv.width || c.image_size[1] !== cv.height)) {
+    // кадр другого размера: пересчитать зоны из нормированных координат
+    zones = (c.zones || []).map((z) => ({ label: z.label, points: (z.points_norm || []).map(([x, y]) => [Math.round(x * cv.width), Math.round(y * cv.height)]) }));
+    renderZones();
+  }
+  draw();
+}
+function clearForm() {
+  editingIndex = -1;
+  fillForm({});
+  status(img ? `${imgName} — новая камера` : "Новая камера");
+  renderCams();
+}
+
+$("btnApply").onclick = () => {
+  const c = readForm();
+  const problems = [];
+  if (!c.camera_id) problems.push("ID камеры");
+  if (!img) problems.push("кадр");
+  if (!c.zones.length) problems.push("хотя бы одна зона");
+  if (current.length) problems.push("замкни текущую зону (Enter)");
+  if (problems.length) { alertBox("Не хватает: " + problems.join(", ")); return; }
+  const dup = data.cameras.findIndex((x) => x.camera_id === c.camera_id);
+  if (editingIndex >= 0) data.cameras[editingIndex] = c;
+  else if (dup >= 0) { data.cameras[dup] = c; editingIndex = dup; }
+  else { data.cameras.push(c); editingIndex = data.cameras.length - 1; }
+  renderCams();
+  status(`Камера ${c.camera_id} записана в список. Не забудь «Сохранить cameras.json».`);
+};
+$("btnNew").onclick = clearForm;
+
+function renderCams() {
+  const el = $("camList"); el.innerHTML = "";
+  if (!data.cameras.length) { el.innerHTML = '<div class="hint">Пока пусто.</div>'; return; }
+  data.cameras.forEach((c, i) => {
+    const d = document.createElement("div"); d.className = "cam" + (i === editingIndex ? " active" : "");
+    d.innerHTML = `<b>${c.camera_id}</b> <small>${c.source} · ${c.place_type} · зон: ${(c.zones || []).length}</small><br><small>${c.name || ""}</small>`;
+    d.onclick = () => { editingIndex = i; fillForm(c); renderCams(); status(`Редактирую ${c.camera_id}. Открой его кадр, чтобы увидеть зоны.`); };
+    const del = document.createElement("button"); del.className = "danger"; del.textContent = "удалить"; del.style.float = "right";
+    del.onclick = (ev) => { ev.stopPropagation(); if (confirmBox(`Удалить ${c.camera_id} из списка?`)) { data.cameras.splice(i, 1); if (editingIndex === i) editingIndex = -1; renderCams(); } };
+    d.prepend(del); el.appendChild(d);
+  });
+}
+
+// ---------- json load/save ----------
+$("btnLoadJson").onclick = () => $("fileJson").click();
+$("fileJson").onchange = async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const j = JSON.parse(await f.text());
+    if (!Array.isArray(j.cameras)) throw new Error("нет поля cameras");
+    data = j; editingIndex = -1; renderCams(); status(`Загружено камер: ${data.cameras.length}`);
+  } catch (err) { alertBox("Не удалось прочитать файл: " + err.message); }
+};
+$("btnSave").onclick = () => {
+  data.version = 1;
+  data.updated = new Date().toISOString();
+  data.cameras.sort((a, b) => a.camera_id.localeCompare(b.camera_id));
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "cameras.json"; a.click();
+  status(`Сохранено камер: ${data.cameras.length} (файл cameras.json в «Загрузках»)`);
+};
+
+// простые диалоги без alert/confirm браузера, чтобы ничего не блокировать
+function alertBox(t) { status(t); }
+function confirmBox(t) { return window.confirm(t); }
+
+renderCams();
+</script>
+</body>
+</html>

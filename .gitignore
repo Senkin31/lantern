@@ -17,6 +17,7 @@ frames/
 *.pt
 *.pth
 *.onnx
+!vision/*.onnx
 *.ckpt
 runs/
 

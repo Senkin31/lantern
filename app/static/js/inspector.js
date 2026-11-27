@@ -546,7 +546,7 @@
         ${d.evidence_url ? `<p class="small" style="margin:10px 0 0"><a href="${esc(d.evidence_url)}&lang=${esc(L$.lang)}" target="_blank" rel="noopener" title="${esc(t("evidenceHint"))}">${esc(t("evidencePack"))}</a> · <span class="muted">${esc(t("evidenceHint"))}</span></p>` : ""}
       </section>
       ${warnHTML(d)}
-      ${reps ? `<section><h3>${esc(t("reports"))} (${d.report_count})</h3><div class="photos">${reps}</div></section>` : ""}
+      ${reps ? `<section><h3>${esc(t("reports"))} (${d.reports.length})</h3><div class="photos">${reps}</div></section>` : ""}
       <details class="more" id="more" ${S.moreOpen ? "open" : ""}><summary>${esc(t("moreDetails"))}</summary>
         <h4>${esc(t("timeline"))}</h4><dl class="timeline">${tl}</dl>
         <h4>${esc(t("why"))}</h4><ul class="reasons">${reasons || `<li class="muted">${esc(t("none"))}</li>`}</ul>

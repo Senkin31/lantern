@@ -132,6 +132,7 @@
       S.map = L$.makeMap($("#cmap"), S.meta);
       // my sidewalks like Riga's pGIS: my jobs' stretches in their task colour, the rest blue
       S.network = L$.sidewalkNetwork(S.map, { onPick: (st) => openJob(st.alert_id) });
+      S.map.on("zoomend", showDots);
       S.network.ready.then(() => {
         const lg = L.control({ position: "bottomleft" });
         lg.onAdd = () => { const d = L.DomUtil.create("div", "map-legend"); d.innerHTML = S.network ? S.network.legend() : ""; return d; };
@@ -139,6 +140,16 @@
       });
       updateMap();
     }
+  }
+
+  // like the inspector map: from far only the coloured lines, the dots appear when you zoom in
+  function showDots() {
+    if (!S.map) return;
+    const on = S.map.getZoom() >= L$.DOT_ZOOM;
+    S.layers.forEach((l) => {
+      if (on && !S.map.hasLayer(l.marker)) l.marker.addTo(S.map);
+      if (!on && S.map.hasLayer(l.marker)) l.marker.remove();
+    });
   }
 
   function openJob(id) {
@@ -161,7 +172,7 @@
       let l = S.layers.get(a.id);
       if (!l) {
         l = {};
-        l.marker = L.circleMarker(dotAt(a), style).addTo(S.map);  // every job sits on its sidewalk line
+        l.marker = L.circleMarker(dotAt(a), style);  // every job sits on its sidewalk line (shown close up)
         l.marker.on("click", () => openJob(a.id));
         S.layers.set(a.id, l);
       } else {
@@ -170,6 +181,7 @@
       l.marker.bindTooltip(`#${a.id} · ${esc(L$.place(a.place_type))} · ${esc(t("st_" + a.status))}`);
     });
     S.layers.forEach((l, id) => { if (!seen.has(id)) { l.marker.remove(); S.layers.delete(id); } });
+    showDots();
     if (!S.fitted) {
       const pts = S.alerts.map(dotAt);
       if (pts.length) S.map.fitBounds(pts, { padding: [40, 40], maxZoom: 17 });

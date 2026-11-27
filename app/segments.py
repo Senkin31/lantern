@@ -13,6 +13,10 @@ maintenance system (pGIS, hagberg.pgis.lv) draws it: every stretch of sidewalk i
 always visible, coloured by its latest task - blue: no task, red: registered, yellow: started,
 green: finished. Our alerts are the tasks (STATE below). Only lines that are drawn take alerts, so a
 colour or a dot never lands on a line nobody can see.
+
+With data/pgis_sidewalks.geojson (python -m app.pgis_sidewalks) the lines ARE the pGIS objects, 1:1:
+all of Riga, the maintained sidewalks only, with their real gaps. One object can have several pieces
+(same "obj"); an alert on any piece colours the whole object, like a task in pGIS.
 """
 import json
 import math
@@ -51,7 +55,9 @@ def _severity_rank(a) -> int:
 class Sidewalks:
     """Blocks of sidewalk / street with a 100 m grid index; coordinates in metres around Riga."""
 
-    def __init__(self, features: list):
+    def __init__(self, features: list, attribution: Optional[str] = None):
+        self.attribution = attribution
+        self.objs = defaultdict(list)  # object id -> ids of its pieces (a pGIS object can have several)
         self.blocks = []
         self.areas = []  # squares / pedestrian areas: an alert inside one belongs to the whole square
         self.area_grid = defaultdict(list)
@@ -74,8 +80,11 @@ class Sidewalks:
             xy = [self.xy(lat, lon) for lon, lat in coords]
             length = sum(math.dist(xy[i], xy[i + 1]) for i in range(len(xy) - 1))
             idx = len(self.blocks)
-            self.blocks.append({"id": p.get("id") or f"b{idx}", "name": p.get("name"), "kind": p.get("kind", "street"),
-                                "latlon": [[lat, lon] for lon, lat in coords], "xy": xy, "length_m": length})
+            bid = p.get("id") or f"b{idx}"
+            self.blocks.append({"id": bid, "name": p.get("name"), "kind": p.get("kind", "street"),
+                                "latlon": [[lat, lon] for lon, lat in coords], "xy": xy, "length_m": length,
+                                "obj": p.get("obj") or bid, "district": p.get("district"), "source": p.get("source")})
+            self.objs[p.get("obj") or bid].append(bid)
             cells = set()
             for (x1, y1), (x2, y2) in zip(xy, xy[1:]):
                 steps = max(1, int(math.dist((x1, y1), (x2, y2)) // (CELL_M / 2)))
@@ -95,8 +104,11 @@ class Sidewalks:
         xy = [self.xy(lat, lon) for lon, lat in ring]
         area = abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(xy, xy[1:]))) / 2
         idx = len(self.areas)
-        self.areas.append({"id": p.get("id") or f"a{idx}", "name": p.get("name"), "kind": "square",
+        aid = p.get("id") or f"a{idx}"
+        self.areas.append({"id": aid, "name": p.get("name"), "kind": "square", "obj": p.get("obj") or aid,
+                           "district": p.get("district"), "source": p.get("source"),
                            "latlon": [[lat, lon] for lon, lat in ring], "xy": xy, "area_m2": area})
+        self.objs[p.get("obj") or aid].append(aid)
         xs, ys = [x for x, _ in xy], [y for _, y in xy]
         for gx in range(int(min(xs) // CELL_M), int(max(xs) // CELL_M) + 1):
             for gy in range(int(min(ys) // CELL_M), int(max(ys) // CELL_M) + 1):
@@ -160,7 +172,7 @@ class Sidewalks:
         if not path or not Path(path).is_file():
             return None
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        return cls(data.get("features", []))
+        return cls(data.get("features", []), data.get("attribution"))
 
     def xy(self, lat: float, lon: float):
         return ((lon - 24.0) * self.kx, (lat - self.lat0) * self.ky)
@@ -227,7 +239,7 @@ class Sidewalks:
                 steps = max(1, int(math.dist((x1, y1), (x2, y2)) // SAMPLE_M))
                 pts += [(x1 + (x2 - x1) * k / steps, y1 + (y2 - y1) * k / steps) for k in range(steps)]
             pts.append(b["xy"][-1])
-            if self.areas and sum(1 for p in pts if in_square(p)) >= COVER_SHARE * len(pts):
+            if b["source"] != "pgis" and self.areas and sum(1 for p in pts if in_square(p)) >= COVER_SHARE * len(pts):
                 continue  # inside a square: an alert there colours the square, so this line could never change
             if b["kind"] == "sidewalk" or sum(1 for p in pts if covered(p)) < COVER_SHARE * len(pts):
                 drawn.add(b["id"])
@@ -237,10 +249,15 @@ class Sidewalks:
     def network(self) -> list:
         """The map's base layer: drawn blocks (lines) and squares (areas), geometry only."""
         drawn = self.drawn_ids()
-        out = [{"id": b["id"], "name": b["name"], "kind": b["kind"], "shape": "line", "length_m": round(b["length_m"]),
+        obj_m = defaultdict(float)  # a pGIS object's length is all its pieces together ("Garums m")
+        for b in self.blocks:
+            obj_m[b["obj"]] += b["length_m"]
+        out = [{"id": b["id"], "name": b["name"], "district": b["district"], "kind": b["kind"], "shape": "line",
+                "length_m": round(obj_m[b["obj"]]),
                 "coords": [[round(lat, 6), round(lon, 6)] for lat, lon in b["latlon"]]}
                for b in self.blocks if b["id"] in drawn]
-        out += [{"id": a["id"], "name": a["name"], "kind": "square", "shape": "area", "area_m2": round(a["area_m2"]),
+        out += [{"id": a["id"], "name": a["name"], "district": a["district"], "kind": "square", "shape": "area",
+                 "area_m2": round(a["area_m2"]),
                  "coords": [[round(lat, 6), round(lon, 6)] for lat, lon in a["latlon"]]} for a in self.areas]
         return out
 
@@ -300,15 +317,18 @@ def network_status(alerts: list, sidewalks: Optional[Sidewalks]) -> dict:
         if b["kind"] != "square":
             points[a["id"]] = sidewalks.snap(b, a["lat"], a["lon"])
         state = STATE.get(a["status"], "registered")
-        e = blocks.setdefault(b["id"], {"alert_ids": [], "state": None})
+        e = blocks.setdefault(b.get("obj") or b["id"], {"alert_ids": [], "state": None})
         e["alert_ids"].append(a["id"])
         cur = e["state"]
         # a later alert replaces an earlier one, except that a finished one never hides an open one
         if cur is None or cur == "finished" or (state != "finished" and STATE_RANK[state] >= STATE_RANK[cur]):
             e.update(state=state, status=a["status"], alert_id=a["id"], urgency_level=a["urgency_level"])
-    for e in blocks.values():
+    out = {}
+    for obj, e in blocks.items():
         e["alert_ids"].sort()
-    return {"blocks": blocks, "points": points}
+        for piece in sidewalks.objs.get(obj) or [obj]:  # every piece of the object takes its colour
+            out[piece] = e
+    return {"blocks": out, "points": points}
 
 
 def _summary(group: list, devices: dict) -> dict:

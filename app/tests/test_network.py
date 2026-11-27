@@ -90,3 +90,48 @@ def test_map_endpoints(make_client, tmp_path, monkeypatch):
     assert st["points"][str(rep["alert_id"])] == [56.95009, 24.1105]
     assert client.get("/map/status", params={"role": "contractor"}).status_code == 400
     assert client.get("/map/status", params={"role": "contractor", "contractor": "A"}).status_code == 200
+
+
+# ---------------------------------------------------------------- Riga's pGIS objects (app/pgis_sidewalks.py)
+def test_pgis_import_keeps_objects_gaps_and_names():
+    from app.pgis_sidewalks import convert, fix_name, parse_wkt
+    assert fix_name("BaloÅ¾u iela") == "Baložu iela"
+    assert fix_name("MurjÄ\x81Å†u iela") == "Murjāņu iela"
+    assert fix_name("Sergeja EizenÅ?teina iela") == "Sergeja Eizenšteina iela"
+    assert fix_name("Brīvības iela") == "Brīvības iela"                  # a good name is left alone
+    kind, parts = parse_wkt("MULTILINESTRING ((2683334 7749700, 2683434 7749800), (2683500 7749700, 2683600 7749800))")
+    assert kind == "MULTILINESTRING" and len(parts) == 2 and parts[0][0] == [24.1047994, 56.9489909]
+    feats = convert({"features": [{"id": 7, "name": "Imported line", "classId": 1,
+                                   "geom": "MULTILINESTRING ((2683334 7749700, 2683434 7749800), (2683500 7749700, 2683600 7749800))"}]},
+                    {"features": [{"id": 9, "name": "Imported polygon", "classId": 2,
+                                   "geom": "POLYGON ((2683000 7749000, 2683100 7749000, 2683100 7749100, 2683000 7749000))"}]},
+                    {1: "Centrs", 2: "Vecrīgas zonējums"})
+    assert [f["properties"]["id"] for f in feats] == ["p7~1", "p7~2", "p9"]   # the gap stays a gap
+    assert {f["properties"]["obj"] for f in feats[:2]} == {"p7"} and feats[0]["properties"]["name"] is None
+    assert feats[0]["properties"]["district"] == "Centrs"
+    assert feats[2]["properties"]["kind"] == "square" and feats[2]["properties"]["name"] == "Vecrīgas zonējums"
+
+
+def test_an_alert_on_one_piece_colours_the_whole_pgis_object():
+    piece = lambda fid, coords: {"type": "Feature", "geometry": {"type": "LineString", "coordinates": coords},
+                                 "properties": {"id": fid, "obj": "p7", "name": "Test iela", "kind": "sidewalk",
+                                                "source": "pgis"}}
+    w = Sidewalks([piece("p7~1", [[24.1100, 56.95009], [24.1120, 56.95009]]),
+                   piece("p7~2", [[24.1130, 56.95009], [24.1150, 56.95009]])])   # 60 m gap between them
+    st = network_status([alert(1, 56.95005, 24.1105, status="open")], w)
+    assert set(st["blocks"]) == {"p7~1", "p7~2"} and st["blocks"]["p7~2"]["alert_ids"] == [1]
+    assert {b["length_m"] for b in w.network()} == {round(w.blocks[0]["length_m"] + w.blocks[1]["length_m"])}
+    # a report in the middle of the gap (30 m from both pieces) is on no maintained sidewalk: no colour
+    assert network_status([alert(2, 56.95005, 24.1125, status="open")], w)["blocks"] == {}
+
+
+def test_network_is_revalidated_with_an_etag(make_client, tmp_path, monkeypatch):
+    from app.main import settings
+    f = tmp_path / "walks.geojson"
+    f.write_text(json.dumps({"type": "FeatureCollection", "attribution": "Ietves: test", "features": feats()}),
+                 encoding="utf-8")
+    monkeypatch.setattr(settings, "sidewalks_file", f)
+    client, _, _ = setup(make_client)
+    r = client.get("/map/network")
+    assert r.json()["attribution"] == "Ietves: test" and r.headers["cache-control"] == "private, no-cache"
+    assert client.get("/map/network", headers={"If-None-Match": r.headers["etag"]}).status_code == 304

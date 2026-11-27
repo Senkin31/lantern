@@ -255,6 +255,7 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .map-legend i.net-line { width: 16px; height: 3px; border-radius: 0; vertical-align: 3px; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
 .map-legend .legend-h { font-weight: 700; margin-top: 4px; }
 .map-legend .legend-h:first-child { margin-top: 0; }
+.map-legend .legend-note { color: var(--muted); font-style: italic; margin-top: 2px; }
 /* the sidewalk network (Riga pGIS look): light grey base map, so the thin coloured lines read like theirs */
 .net-map .leaflet-tile-pane { filter: grayscale(1) brightness(1.06) contrast(.88); }
 /* our dots are SVG over the network canvas: only the dots themselves catch clicks, not the whole SVG */

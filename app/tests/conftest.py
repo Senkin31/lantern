@@ -16,6 +16,8 @@ os.environ["TRUSTED_HOSTS"] = "127.0.0.1,::1,testclient"
 os.environ["LANTERN_PASSWORD"] = ""
 os.environ["BOT_PASSWORD"] = ""
 os.environ["TELEGRAM_ALLOWED_USERS"] = ""
+# the tests use the committed OSM file, not a downloaded data/pgis_sidewalks.geojson
+os.environ["SIDEWALKS_FILE"] = "config/riga_sidewalks.geojson"
 
 MOCK = ROOT / "mock"
 

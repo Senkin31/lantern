@@ -53,7 +53,10 @@ class Settings:
         self.cameras_fallback = _path("CAMERAS_FALLBACK", "mock/cameras_mock.json")
         self.contractors_file = _path("CONTRACTORS_FILE", "config/contractors.json")
         # street / sidewalk blocks from OpenStreetMap (python -m app.osm_sidewalks); missing -> cluster lines
-        self.sidewalks_file = _path("SIDEWALKS_FILE", "config/riga_sidewalks.geojson")
+        # Riga's real pGIS sidewalk objects when downloaded (python -m app.pgis_sidewalks, git-ignored),
+        # else the OpenStreetMap blocks of central Riga
+        pgis = ROOT / "data" / "pgis_sidewalks.geojson"
+        self.sidewalks_file = _path("SIDEWALKS_FILE", str(pgis) if pgis.is_file() else "config/riga_sidewalks.geojson")
 
         self.analyze_url = env("ANALYZE_URL", "")  # empty -> built-in stub (always accept)
         self.analyze_timeout = env_float("ANALYZE_TIMEOUT", 10.0)

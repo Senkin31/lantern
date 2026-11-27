@@ -90,7 +90,7 @@
       bubbleLegend: "Several alerts close together", bubbleTip: "{n} alerts here: click to zoom in",
       net_title: "Sidewalks (as in Riga's pGIS)", net_none: "No task", net_registered: "Registered: to clean (open, reopened)",
       net_started: "Started: deadline running or cleaned, to check", net_finished: "Finished: cleaned and confirmed",
-      net_on: "Sidewalk lines", legendDots: "Alerts (dots)",
+      net_on: "Sidewalk lines", legendDots: "Alerts (dots)", dotsZoomNote: "Dots appear when you zoom in",
       exportGeo: "Export GeoJSON", exportCsv: "Export CSV", noStats: "No alerts have been sent to contractors yet.",
       // contractor
       myJobs: "My jobs", listView: "List", mapView: "Map", toDo: "To do", waiting: "Waiting for check", doneToday: "Verified",
@@ -182,7 +182,7 @@
       bubbleLegend: "Vairāki brīdinājumi tuvu", bubbleTip: "Šeit {n} brīdinājumi: klikšķini, lai pietuvinātu",
       net_title: "Ietves (kā Rīgas pGIS)", net_none: "Nav uzdevuma", net_registered: "Reģistrēts: jātīra (atvērts, atkārtoti atvērts)",
       net_started: "Uzsākts: termiņš rit vai notīrīts, jāpārbauda", net_finished: "Pabeigts: notīrīts un apstiprināts",
-      net_on: "Ietvju līnijas", legendDots: "Brīdinājumi (punkti)",
+      net_on: "Ietvju līnijas", legendDots: "Brīdinājumi (punkti)", dotsZoomNote: "Punkti parādās, kad pietuvina",
       exportGeo: "Eksportēt GeoJSON", exportCsv: "Eksportēt CSV", noStats: "Darbuzņēmējiem vēl nekas nav nosūtīts.",
       myJobs: "Mani darbi", listView: "Saraksts", mapView: "Karte", toDo: "Jādara", waiting: "Gaida pārbaudi", doneToday: "Pārbaudīti",
       noJobs: "Jūsu rajonā šobrīd darbu nav.", completed: "Pabeigtie",
@@ -404,6 +404,7 @@
   // The lines sit on their own canvas pane under our dots; the dots stay clickable on top.
   const NET = { none: "rgb(0,28,255)", registered: "rgb(255,0,0)", started: "rgb(255,250,0)", finished: "rgb(0,255,2)" };
   const NET_STATES = ["none", "registered", "started", "finished"];
+  const DOT_ZOOM = 16;  // alert dots appear from this zoom (a few streets on screen); further out only lines
 
   function sidewalkNetwork(map, opts = {}) {
     map.getContainer().classList.add("net-map");
@@ -421,10 +422,12 @@
     const tip = (b) => {
       const st = status[b.id];
       const size = b.shape === "area" ? `${t("squareL")} · ${Math.round(b.area_m2 || 0).toLocaleString()} m²` : `${b.length_m} m`;
-      return `${esc(b.name || t("sectionNoName"))} · ${esc(size)}<br>${esc(t("net_" + stateOf(b)))}`
+      const where = b.name && b.district && b.district !== b.name ? `${b.name} (${b.district})` : (b.name || b.district || t("sectionNoName"));
+      return `${esc(where)} · ${esc(size)}<br>${esc(t("net_" + stateOf(b)))}`
         + (st ? ` · #${st.alert_ids.join(", #")}` : "");
     };
     const ready = api("/map/network").then((r) => {
+      if (r.attribution && map.attributionControl) map.attributionControl.addAttribution(esc(r.attribution));
       (r.blocks || []).forEach((b) => {
         const o = { renderer, pane: "network", opacity: 1, lineCap: "butt", lineJoin: "round", ...styleOf(b) };
         const l = b.shape === "area" ? L.polygon(b.coords, o) : L.polyline(b.coords, o);
@@ -452,7 +455,7 @@
   window.Lantern = {
     t, setLang, get lang() { return lang; }, esc, api, syncClock, syncFromSettings, now, fmtTime, clockText, fmtDur, since,
     sinceSpan, updateSince, hours, pct, setHourSeconds, statusBadge, levelBadge, severityBadge, isClosed, place, hazard,
-    reasonText, alertColor, COLORS, NET, sidewalkNetwork,
+    reasonText, alertColor, COLORS, NET, DOT_ZOOM, sidewalkNetwork,
     renderHeader, renderFooter, toast, lightbox, makeMap, toLatLngs,
   };
 })();

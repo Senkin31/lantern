@@ -5,6 +5,7 @@ Run from the repo root:  uvicorn app.main:app --port 8000
 import asyncio
 import contextlib
 import gzip
+import hashlib
 import json
 import secrets
 from pathlib import Path
@@ -508,12 +509,17 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         where OpenStreetMap has no sidewalk beside it) and every square, geometry only. It changes only with
         config/riga_sidewalks.geojson, so it is built once and sent gzipped."""
         if "plain" not in net_cache:
-            body = {"attribution": "© OpenStreetMap contributors, ODbL",
-                    "blocks": views.sidewalks.network() if views.sidewalks else []}
+            sw = views.sidewalks
+            body = {"attribution": (sw.attribution if sw and sw.attribution else "© OpenStreetMap contributors, ODbL"),
+                    "blocks": sw.network() if sw else []}
             net_cache["plain"] = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
             net_cache["gzip"] = gzip.compress(net_cache["plain"], 6)
+            net_cache["etag"] = '"' + hashlib.sha1(net_cache["plain"]).hexdigest()[:16] + '"'
+        # the browser keeps it but asks each time (304 when unchanged), so a new sidewalk file shows at once
+        if request.headers.get("if-none-match") == net_cache["etag"]:
+            return Response(status_code=304, headers={"ETag": net_cache["etag"]})
         gz = "gzip" in (request.headers.get("accept-encoding") or "")
-        headers = {"Cache-Control": "private, max-age=600", "Vary": "Accept-Encoding"}
+        headers = {"Cache-Control": "private, no-cache", "Vary": "Accept-Encoding", "ETag": net_cache["etag"]}
         if gz:
             headers["Content-Encoding"] = "gzip"
         return Response(net_cache["gzip" if gz else "plain"], media_type="application/json", headers=headers)

@@ -173,7 +173,7 @@
         + `<div><i style="background:${c.reopened}"></i>${esc(t("st_reopened"))}</div>`
         + `<div><i style="background:${c.verified}"></i>${esc(t("st_verified"))}</div>`
         + `<div><i style="background:${c.cleared}"></i>${esc(t("st_cleared_in_time"))}</div>`
-        + `<div><i class="legend-bubble" style="background:${c.medium}">3</i>${esc(t("bubbleLegend"))}</div>`;
+        + `<div class="legend-note">${esc(t("dotsZoomNote"))}</div>`;
       return d;
     };
     S.legend.addTo(S.map);
@@ -214,11 +214,10 @@
   }
 
   // ---------------------------------------------------------------- zoom levels
-  // City view (zoom <= 16): street lines only; an alert that is not on a line is a dot, and dots that crowd
-  // become one count bubble. Block view (zoom >= 17): every dot and camera zone, the line fades behind them.
+  // Far away (zoom < DOT_ZOOM): only the coloured sidewalk lines, like Riga's pGIS - no dots, no bubbles.
+  // Close up (zoom >= DOT_ZOOM): every alert's dot on its line. Block view (zoom >= DETAIL_ZOOM): camera positions too.
+  const DOT_ZOOM = L$.DOT_ZOOM;
   const DETAIL_ZOOM = 17;
-  const BUBBLE_PX = 46;
-  const RANK = (a) => (a.status === "reopened" ? 5 : a.status === "watch" ? 1 : ({ high: 4, medium: 3, low: 2 }[a.urgency_level] || 2));
 
   function show(layer, on) {
     if (!layer) return;
@@ -228,41 +227,11 @@
 
   function applyView() {
     if (!S.map) return;
-    const detail = S.map.getZoom() >= DETAIL_ZOOM;
-    show(S.camGroup, detail);
-    // every open alert stays a dot on top of its coloured line; only dots that crowd become a count bubble
-    const loose = [];
+    const z = S.map.getZoom();
+    show(S.camGroup, z >= DETAIL_ZOOM);
     S.alerts.forEach((a) => {
       const l = S.layers.get(a.id);
-      if (!l) return;
-      const visible = detail || a.id === S.selected;
-      show(l.marker, visible);
-      if (!visible && !L$.isClosed(a)) loose.push(a);
-    });
-    if (!S.bubbleLayer) S.bubbleLayer = L.layerGroup().addTo(S.map);
-    const groups = [];
-    loose.forEach((a) => {
-      const p = S.map.latLngToLayerPoint([a.lat, a.lon]);
-      const g = groups.find((x) => x.p.distanceTo(p) <= BUBBLE_PX);
-      if (g) g.items.push(a); else groups.push({ p, items: [a] });
-    });
-    groups.forEach((g) => { if (g.items.length === 1) show(S.layers.get(g.items[0].id).marker, true); });
-    // rebuild the bubbles only when they change: a bubble replaced every 3 s refresh would swallow clicks
-    const key = detail ? "detail" : S.map.getZoom() + "|" + groups.filter((g) => g.items.length > 1)
-      .map((g) => g.items.map((a) => `${a.id}:${a.status}:${a.urgency_level}`).join(",")).join(";");
-    if (key === S.bubbleKey) return;
-    S.bubbleKey = key;
-    S.bubbleLayer.clearLayers();
-    groups.forEach((g) => {
-      if (g.items.length === 1) return;
-      const worst = g.items.reduce((m, a) => (RANK(a) > RANK(m) ? a : m));
-      const col = L$.alertColor(worst);
-      const b = L.latLngBounds(g.items.map((a) => [a.lat, a.lon]));
-      const n = g.items.length;
-      L.marker(b.getCenter(), { icon: L.divIcon({ className: "bubble", html: `<span style="background:${col}">${n}</span>`, iconSize: [34, 34] }) })
-        .bindTooltip(esc(t("bubbleTip", { n })))
-        .on("click", () => S.map.fitBounds(b.pad(0.3), { maxZoom: DETAIL_ZOOM + 1 }))
-        .addTo(S.bubbleLayer);
+      if (l) show(l.marker, z >= DOT_ZOOM);
     });
   }
 
@@ -308,7 +277,8 @@
     updateMap();
     api(`/alerts/${id}?role=inspector`).then((d) => { S.detail = d; renderPanel(); }).catch((e) => L$.toast(e.message, true));
     const l = S.layers.get(id);
-    if (l && pan) S.map.panTo(l.marker.getLatLng(), { animate: true });
+    // the dots only show close up: picking an alert from the list flies in to it
+    if (l && pan) S.map.setView(l.marker.getLatLng(), Math.max(S.map.getZoom(), DOT_ZOOM + 1), { animate: true });
   }
 
   // ---------------------------------------------------------------- tabs

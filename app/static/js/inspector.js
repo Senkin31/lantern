@@ -33,6 +33,7 @@
     L$.syncFromSettings(S.settings);
     renderChrome();
     S.map = L$.makeMap($("#map"), S.meta);
+    startNetwork();
     drawCameraZones();
     addLegend();
     S.map.on("zoomend", applyView);
@@ -56,7 +57,7 @@
       S.alerts = res.alerts;
       S.settings = res.settings;
       L$.syncFromSettings(S.settings);
-      const jobs = [api("/sections?role=inspector").then((r) => { S.sections = r.sections; }).catch(() => {})];
+      const jobs = [api("/map/status?role=inspector").then((r) => { S.net = r; }).catch(() => {})];
       if (S.tab === "today") jobs.push(api("/inspection/today").then((r) => { S.data.today = r.alerts; }));
       if (S.tab === "reports") {
         jobs.push(api("/reports?role=inspector&relevant=review").then((r) => { S.data.reviewReports = r; }));
@@ -166,12 +167,12 @@
     S.legend.onAdd = () => {
       const d = L.DomUtil.create("div", "map-legend");
       const c = L$.COLORS;
-      d.innerHTML = [["high", c.high], ["medium", c.medium], ["low", c.low]].map(([k, col]) => `<div><i style="background:${col}"></i>${esc(t("lv_" + k))}</div>`).join("")
+      d.innerHTML = (S.network ? S.network.legend() : "") + `<div class="legend-h">${esc(t("legendDots"))}</div>`
+        + [["high", c.high], ["medium", c.medium], ["low", c.low]].map(([k, col]) => `<div><i style="background:${col}"></i>${esc(t("lv_" + k))}</div>`).join("")
         + `<div><i style="background:${c.watch}"></i>${esc(t("st_watch"))}</div>`
         + `<div><i style="background:${c.reopened}"></i>${esc(t("st_reopened"))}</div>`
         + `<div><i style="background:${c.verified}"></i>${esc(t("st_verified"))}</div>`
         + `<div><i style="background:${c.cleared}"></i>${esc(t("st_cleared_in_time"))}</div>`
-        + `<div><i style="background:${c.high};height:5px;border-radius:3px;margin-top:4px"></i>${esc(t("sectionLegend"))}</div>`
         + `<div><i class="legend-bubble" style="background:${c.medium}">3</i>${esc(t("bubbleLegend"))}</div>`;
       return d;
     };
@@ -200,29 +201,16 @@
     };
   }
 
-  // Street sections: a block of sidewalk/street with a camera alert or 2+ residents, in its worst alert's colour
-  function updateSections() {
-    if (!S.sectionLayer) S.sectionLayer = L.layerGroup().addTo(S.map);
-    const key = JSON.stringify((S.sections || []).map((s) => [s.id, s.status, s.urgency_level, s.alert_ids]));
-    if (key === S.sectionKey) return;
-    S.sectionKey = key;
-    S.sectionLayer.clearLayers();
-    (S.sections || []).forEach((s) => {
-      const col = L$.alertColor({ status: s.status, urgency_level: s.urgency_level });
-      const dash = s.status === "watch" ? "8 8" : null;
-      // a square is one place: paint the whole area; a street: a thick line along the block
-      const line = s.shape === "area"
-        ? L.polygon(s.coords, { color: col, weight: 3, fillColor: col, fillOpacity: 0.35, dashArray: dash }).addTo(S.sectionLayer)
-        : L.polyline(s.coords, { color: col, weight: 9, opacity: 0.7, lineCap: "round", dashArray: dash }).addTo(S.sectionLayer);
-      const who = [s.camera ? "📷" : "", s.residents ? `${s.residents} 👤` : ""].filter(Boolean).join(" · ");
-      const size = s.shape === "area" ? `${t("squareL")} · ${Math.round(s.area_m2).toLocaleString()} m²` : `${s.length_m} m`;
-      line.bindTooltip(`${esc(s.name || t("sectionNoName"))} · ${esc(size)}<br>${esc(t("lv_" + s.urgency_level))} · ${who} · #${s.alert_ids.join(", #")}`);
-      line.on("click", () => {
+  // The sidewalk network, drawn like Riga's pGIS: every stretch is a thin line in the colour of its latest
+  // alert (blue none, red registered, yellow started, green finished); click a coloured one to open its alert
+  function startNetwork() {
+    S.network = L$.sidewalkNetwork(S.map, {
+      onPick: (st, b, line) => {
         S.map.fitBounds(line.getBounds(), { padding: [80, 80], maxZoom: 18 });
-        select(s.alert_ids[0], false);
-      });
-      line.bringToBack();
+        select(st.alert_id, false);
+      },
     });
+    S.network.ready.then(() => { addLegend(); if (S.net) S.network.setStatus(S.net.blocks); });
   }
 
   // ---------------------------------------------------------------- zoom levels
@@ -242,19 +230,14 @@
     if (!S.map) return;
     const detail = S.map.getZoom() >= DETAIL_ZOOM;
     show(S.camGroup, detail);
-    // the section is the shape of the problem at every zoom (there are no camera rectangles); up close it is
-    // a little thinner so the dots on it stay readable
-    if (S.sectionLayer) S.sectionLayer.eachLayer((l) => l.setStyle(l instanceof L.Polygon
-      ? (detail ? { weight: 3, opacity: 0.9, fillOpacity: 0.3 } : { weight: 3, opacity: 0.9, fillOpacity: 0.35 })
-      : (detail ? { weight: 8, opacity: 0.7 } : { weight: 10, opacity: 0.85 })));
-    const onLine = new Set((S.sections || []).flatMap((s) => s.alert_ids));
+    // every open alert stays a dot on top of its coloured line; only dots that crowd become a count bubble
     const loose = [];
     S.alerts.forEach((a) => {
       const l = S.layers.get(a.id);
       if (!l) return;
       const visible = detail || a.id === S.selected;
       show(l.marker, visible);
-      if (!visible && !L$.isClosed(a) && !onLine.has(a.id)) loose.push(a);
+      if (!visible && !L$.isClosed(a)) loose.push(a);
     });
     if (!S.bubbleLayer) S.bubbleLayer = L.layerGroup().addTo(S.map);
     const groups = [];
@@ -285,10 +268,9 @@
 
   function updateMap() {
     if (!S.map) return;
-    updateSections();
-    // an alert on a street section is drawn on that street (the backend snaps it), not on a roof
-    const dotAt = new Map();
-    (S.sections || []).forEach((s) => Object.entries(s.points || {}).forEach(([id, p]) => dotAt.set(Number(id), p)));
+    if (S.network && S.net) S.network.setStatus(S.net.blocks);
+    // an alert is drawn on its sidewalk line (the backend snaps it), not on a roof or in the road
+    const dotAt = new Map(Object.entries((S.net && S.net.points) || {}).map(([id, p]) => [Number(id), p]));
     const seen = new Set();
     const bounds = [];
     S.alerts.forEach((a) => {

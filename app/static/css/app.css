@@ -252,6 +252,13 @@ button, select, input, textarea { font: inherit; color: inherit; }
   font-weight: 700; font-size: 12px; padding: 1px 6px; box-shadow: var(--shadow); }
 .map-legend { background: var(--surface); color: var(--text); padding: 8px 10px; border-radius: 8px; box-shadow: var(--shadow); font-size: 12px; line-height: 1.7; }
 .map-legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.map-legend i.net-line { width: 16px; height: 3px; border-radius: 0; vertical-align: 3px; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
+.map-legend .legend-h { font-weight: 700; margin-top: 4px; }
+.map-legend .legend-h:first-child { margin-top: 0; }
+/* the sidewalk network (Riga pGIS look): light grey base map, so the thin coloured lines read like theirs */
+.net-map .leaflet-tile-pane { filter: grayscale(1) brightness(1.06) contrast(.88); }
+/* our dots are SVG over the network canvas: only the dots themselves catch clicks, not the whole SVG */
+.net-map .leaflet-overlay-pane > svg { pointer-events: none; }
 .map-legend i.legend-bubble { width: 15px; height: 15px; border-radius: 50%; color: #fff; font-size: 9px; font-style: normal;
   font-weight: 700; text-align: center; line-height: 15px; vertical-align: -3px; }
 .bubble span { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%;

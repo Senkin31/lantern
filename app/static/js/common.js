@@ -88,6 +88,9 @@
       capture_live: "📷 Taken live in the Telegram app", captureTip_live: "Photo taken in the app's own camera just now, at the phone's GPS position",
       sectionLegend: "Street section or square (camera or 2+ residents)", sectionNoName: "Unnamed street", squareL: "square",
       bubbleLegend: "Several alerts close together", bubbleTip: "{n} alerts here: click to zoom in",
+      net_title: "Sidewalks (as in Riga's pGIS)", net_none: "No task", net_registered: "Registered: to clean (open, reopened)",
+      net_started: "Started: deadline running or cleaned, to check", net_finished: "Finished: cleaned and confirmed",
+      net_on: "Sidewalk lines", legendDots: "Alerts (dots)",
       exportGeo: "Export GeoJSON", exportCsv: "Export CSV", noStats: "No alerts have been sent to contractors yet.",
       // contractor
       myJobs: "My jobs", listView: "List", mapView: "Map", toDo: "To do", waiting: "Waiting for check", doneToday: "Verified",
@@ -177,6 +180,9 @@
       capture_live: "📷 Uzņemts tieši Telegram lietotnē", captureTip_live: "Foto uzņemts lietotnes kamerā tikko, tālruņa GPS vietā",
       sectionLegend: "Ielas posms vai laukums (kamera vai 2+ iedzīvotāji)", sectionNoName: "Iela bez nosaukuma", squareL: "laukums",
       bubbleLegend: "Vairāki brīdinājumi tuvu", bubbleTip: "Šeit {n} brīdinājumi: klikšķini, lai pietuvinātu",
+      net_title: "Ietves (kā Rīgas pGIS)", net_none: "Nav uzdevuma", net_registered: "Reģistrēts: jātīra (atvērts, atkārtoti atvērts)",
+      net_started: "Uzsākts: termiņš rit vai notīrīts, jāpārbauda", net_finished: "Pabeigts: notīrīts un apstiprināts",
+      net_on: "Ietvju līnijas", legendDots: "Brīdinājumi (punkti)",
       exportGeo: "Eksportēt GeoJSON", exportCsv: "Eksportēt CSV", noStats: "Darbuzņēmējiem vēl nekas nav nosūtīts.",
       myJobs: "Mani darbi", listView: "Saraksts", mapView: "Karte", toDo: "Jādara", waiting: "Gaida pārbaudi", doneToday: "Pārbaudīti",
       noJobs: "Jūsu rajonā šobrīd darbu nav.", completed: "Pabeigtie",
@@ -392,10 +398,61 @@
   }
   const toLatLngs = (poly) => (poly || []).map((p) => [p[1], p[0]]);
 
+  // ---------------------------------------------------------------- sidewalk network (Riga pGIS look)
+  // Riga's winter maintenance map (pGIS) draws every stretch of sidewalk as a thin solid line in the colour of
+  // its latest task. Same here, same colours: blue no task, red registered, yellow started, green finished.
+  // The lines sit on their own canvas pane under our dots; the dots stay clickable on top.
+  const NET = { none: "rgb(0,28,255)", registered: "rgb(255,0,0)", started: "rgb(255,250,0)", finished: "rgb(0,255,2)" };
+  const NET_STATES = ["none", "registered", "started", "finished"];
+
+  function sidewalkNetwork(map, opts = {}) {
+    map.getContainer().classList.add("net-map");
+    if (!map.getPane("network")) map.createPane("network").style.zIndex = 390;
+    const renderer = L.canvas({ pane: "network", padding: 0.5, tolerance: 5 });
+    const items = [];
+    let status = {};
+    const width = () => (map.getZoom() >= 17 ? 3 : 2);
+    const stateOf = (b) => (status[b.id] ? status[b.id].state : "none");
+    const styleOf = (b) => {
+      const col = NET[stateOf(b)];
+      return b.shape === "area" ? { color: col, weight: width(), fillColor: col, fillOpacity: status[b.id] ? 0.3 : 0.08 }
+        : { color: col, weight: width() };
+    };
+    const tip = (b) => {
+      const st = status[b.id];
+      const size = b.shape === "area" ? `${t("squareL")} · ${Math.round(b.area_m2 || 0).toLocaleString()} m²` : `${b.length_m} m`;
+      return `${esc(b.name || t("sectionNoName"))} · ${esc(size)}<br>${esc(t("net_" + stateOf(b)))}`
+        + (st ? ` · #${st.alert_ids.join(", #")}` : "");
+    };
+    const ready = api("/map/network").then((r) => {
+      (r.blocks || []).forEach((b) => {
+        const o = { renderer, pane: "network", opacity: 1, lineCap: "butt", lineJoin: "round", ...styleOf(b) };
+        const l = b.shape === "area" ? L.polygon(b.coords, o) : L.polyline(b.coords, o);
+        l.bindTooltip(() => tip(b), { sticky: true });
+        l.on("click", () => { if (status[b.id] && opts.onPick) opts.onPick(status[b.id], b, l); });
+        l.addTo(map);
+        items.push({ b, l, key: stateOf(b) + width() });
+      });
+    }).catch((e) => console.warn("sidewalk network", e));
+    function setStatus(s) {
+      status = s || {};
+      items.forEach((x) => {
+        const key = stateOf(x.b) + width();
+        if (key !== x.key) { x.key = key; x.l.setStyle(styleOf(x.b)); }
+      });
+    }
+    map.on("zoomend", () => setStatus(status));
+    function legend() {
+      return `<div class="legend-h">${esc(t("net_title"))}</div>`
+        + NET_STATES.map((k) => `<div><i class="net-line" style="background:${NET[k]}"></i>${esc(t("net_" + k))}</div>`).join("");
+    }
+    return { ready, setStatus, legend, count: () => items.length };
+  }
+
   window.Lantern = {
     t, setLang, get lang() { return lang; }, esc, api, syncClock, syncFromSettings, now, fmtTime, clockText, fmtDur, since,
     sinceSpan, updateSince, hours, pct, setHourSeconds, statusBadge, levelBadge, severityBadge, isClosed, place, hazard,
-    reasonText, alertColor, COLORS,
+    reasonText, alertColor, COLORS, NET, sidewalkNetwork,
     renderHeader, renderFooter, toast, lightbox, makeMap, toLatLngs,
   };
 })();

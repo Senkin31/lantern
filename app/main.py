@@ -4,6 +4,8 @@ Run from the repo root:  uvicorn app.main:app --port 8000
 """
 import asyncio
 import contextlib
+import gzip
+import json
 import secrets
 from pathlib import Path
 from urllib.parse import quote
@@ -497,6 +499,33 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
             raise HTTPException(403, "inspector only")
         engine.tick()
         return {"source": "osm" if views.sidewalks else "cluster", "sections": views.sections()}
+
+    net_cache: dict = {}
+
+    @app.get("/map/network", tags=["map"])
+    def map_network(request: Request):
+        """The sidewalk network both maps draw first, like Riga's pGIS: every stretch of sidewalk (or street
+        where OpenStreetMap has no sidewalk beside it) and every square, geometry only. It changes only with
+        config/riga_sidewalks.geojson, so it is built once and sent gzipped."""
+        if "plain" not in net_cache:
+            body = {"attribution": "© OpenStreetMap contributors, ODbL",
+                    "blocks": views.sidewalks.network() if views.sidewalks else []}
+            net_cache["plain"] = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            net_cache["gzip"] = gzip.compress(net_cache["plain"], 6)
+        gz = "gzip" in (request.headers.get("accept-encoding") or "")
+        headers = {"Cache-Control": "private, max-age=600", "Vary": "Accept-Encoding"}
+        if gz:
+            headers["Content-Encoding"] = "gzip"
+        return Response(net_cache["gzip" if gz else "plain"], media_type="application/json", headers=headers)
+
+    @app.get("/map/status", tags=["map"])
+    def map_status(role: str = "inspector", district: Optional[str] = None, contractor: Optional[str] = None):
+        """The colour of each stretch: the state of its latest alert - registered (open, reopened),
+        started (watch, done_reported), finished (verified, cleared_in_time); a stretch not listed has no
+        task (blue). Plus every alert's dot on its line. A contractor gets only their own jobs."""
+        districts = _role_scope(role, district, contractor)
+        engine.tick()
+        return views.network_status(role, districts)
 
     @app.get("/inspection/today", tags=["inspector"])
     def inspection_today(limit: int = Query(10, ge=1, le=100)):

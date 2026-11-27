@@ -37,9 +37,11 @@
   async function refresh() {
     if (!S.contractor) { $("#main").innerHTML = `<div class="empty">${esc(t("pickContractor"))}</div>`; return; }
     try {
-      const res = await api("/alerts?role=contractor&contractor=" + encodeURIComponent(S.contractor));
+      const who = "role=contractor&contractor=" + encodeURIComponent(S.contractor);
+      const [res, net] = await Promise.all([api("/alerts?" + who), api("/map/status?" + who).catch(() => null)]);
       L$.syncFromSettings(res.settings);
       S.alerts = res.alerts;
+      S.net = net;
       render();
     } catch (e) { console.warn("refresh failed", e); }
   }
@@ -122,15 +124,33 @@
       updateMap(); return;
     }
     S.lastHTML = html;
-    if (S.map) { S.map.remove(); S.map = null; S.layers.clear(); S.fitted = false; }
+    if (S.map) { S.map.remove(); S.map = null; S.network = null; S.layers.clear(); S.fitted = false; }
     $("#main").innerHTML = html;
     L$.updateSince($("#main"));
     bind();
-    if (S.view === "map") { S.map = L$.makeMap($("#cmap"), S.meta); updateMap(); }
+    if (S.view === "map") {
+      S.map = L$.makeMap($("#cmap"), S.meta);
+      // my sidewalks like Riga's pGIS: my jobs' stretches in their task colour, the rest blue
+      S.network = L$.sidewalkNetwork(S.map, { onPick: (st) => openJob(st.alert_id) });
+      S.network.ready.then(() => {
+        const lg = L.control({ position: "bottomleft" });
+        lg.onAdd = () => { const d = L.DomUtil.create("div", "map-legend"); d.innerHTML = S.network ? S.network.legend() : ""; return d; };
+        if (S.map) { lg.addTo(S.map); updateMap(); }
+      });
+      updateMap();
+    }
+  }
+
+  function openJob(id) {
+    S.view = "list"; S.lastHTML = ""; render();
+    const j = document.getElementById("job-" + id);
+    if (j) j.scrollIntoView({ behavior: "smooth" });
   }
 
   function updateMap() {
     if (!S.map) return;
+    if (S.network && S.net) S.network.setStatus(S.net.blocks);
+    const dotAt = (a) => ((S.net && S.net.points && S.net.points[a.id]) || a.map_point || [a.lat, a.lon]);
     const seen = new Set();
     S.alerts.forEach((a) => {
       seen.add(a.id);
@@ -141,17 +161,17 @@
       let l = S.layers.get(a.id);
       if (!l) {
         l = {};
-        l.marker = L.circleMarker(a.map_point || [a.lat, a.lon], style).addTo(S.map);  // camera jobs sit on the street
-        l.marker.on("click", () => { S.view = "list"; S.lastHTML = ""; render(); const j = document.getElementById("job-" + a.id); if (j) j.scrollIntoView({ behavior: "smooth" }); });
+        l.marker = L.circleMarker(dotAt(a), style).addTo(S.map);  // every job sits on its sidewalk line
+        l.marker.on("click", () => openJob(a.id));
         S.layers.set(a.id, l);
       } else {
-        l.marker.setStyle(style); l.marker.setRadius(style.radius);
+        l.marker.setStyle(style); l.marker.setRadius(style.radius); l.marker.setLatLng(dotAt(a));
       }
       l.marker.bindTooltip(`#${a.id} · ${esc(L$.place(a.place_type))} · ${esc(t("st_" + a.status))}`);
     });
     S.layers.forEach((l, id) => { if (!seen.has(id)) { l.marker.remove(); S.layers.delete(id); } });
     if (!S.fitted) {
-      const pts = S.alerts.map((a) => a.map_point || [a.lat, a.lon]);
+      const pts = S.alerts.map(dotAt);
       if (pts.length) S.map.fitBounds(pts, { padding: [40, 40], maxZoom: 17 });
       else {
         const c = me();

@@ -9,6 +9,7 @@ from typing import Optional
 from .engine import CLOSED, DISPATCHED, NOT_CLOSED_SQL, SNOW, Engine
 from .registry import haversine_m
 from .rules import fmt_riga
+from .segments import network_status
 from .segments import sections as street_sections
 from .timeutil import fmt_ts, parse_ts
 
@@ -80,7 +81,7 @@ class Views:
         key = (a["lat"], a["lon"])
         if key not in self._points:
             from .segments import SNAP_CAMERA_M
-            b = self.sidewalks.nearest(a["lat"], a["lon"], SNAP_CAMERA_M)
+            b = self.sidewalks.nearest(a["lat"], a["lon"], SNAP_CAMERA_M, drawn_only=True)
             self._points[key] = self.sidewalks.snap(b, *key) if b and b["kind"] != "square" else None
         return self._points[key]
 
@@ -216,6 +217,11 @@ class Views:
         for r in self.db.q("SELECT alert_id, device_id FROM reports WHERE counted = 1 AND alert_id IS NOT NULL"):
             devices.setdefault(r["alert_id"], set()).add(r["device_id"])
         return street_sections(alerts, devices, self.sidewalks)
+
+    def network_status(self, role: str, districts: Optional[list] = None) -> dict:
+        """Colours of the sidewalk network (app/segments.py): the inspector sees every alert, a contractor
+        only their own jobs (the rest of their map stays blue)."""
+        return network_status(self.alert_rows(role, districts), self.sidewalks)
 
     def inspection_today(self, limit: int = 10) -> list:
         """Check list for the inspector's day (08:30-17:00), in the brief's order:

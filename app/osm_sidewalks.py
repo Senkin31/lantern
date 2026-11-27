@@ -12,6 +12,7 @@ Uses only the standard library. Sends nothing but the bounding box to the public
 import argparse
 import json
 import math
+import time
 import urllib.parse
 import urllib.request
 from collections import Counter, defaultdict
@@ -125,13 +126,22 @@ def crossings(bbox=RIGA_BBOX, tiles: int = 4) -> list:
         for ix in range(tiles):
             tb = (s + (n - s) * iy / tiles, w + (e - w) * ix / tiles,
                   s + (n - s) * (iy + 1) / tiles, w + (e - w) * (ix + 1) / tiles)
-            for url in MIRRORS:
-                try:
-                    els = fetch(tb, crossings_query(tb), url).get("elements", [])
+            els = None
+            for rnd in range(3):  # all busy: wait and go round again
+                if rnd:
+                    time.sleep(30 * rnd)
+                for url in MIRRORS:
+                    try:
+                        ans = fetch(tb, crossings_query(tb), url)
+                        if ans.get("remark"):  # a timed-out query still answers 200, with a remark and a hole
+                            raise RuntimeError(ans["remark"][:100])
+                        els = ans.get("elements", [])
+                        break
+                    except Exception as exc:  # busy or down: the next server
+                        print(f"tile {iy},{ix}: {url.split('/')[2]} failed ({exc})", flush=True)
+                if els is not None:
                     break
-                except Exception as exc:  # busy or down: the next server
-                    print(f"tile {iy},{ix}: {url.split('/')[2]} failed ({exc})")
-            else:
+            if els is None:  # the committed file is left as it is
                 raise RuntimeError(f"tile {iy},{ix}: every Overpass server failed, try again later")
             pts.update({el["id"]: [round(el["lon"], 5), round(el["lat"], 5)] for el in els if "lon" in el})
     return sorted(pts.values())

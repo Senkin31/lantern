@@ -158,6 +158,14 @@ def test_a_long_pgis_line_is_cut_into_blocks_at_its_cross_streets():
     assert [f["properties"]["id"] for f in out if f["properties"]["pgis_obj"] != "p1"] == ["p2", "p3", "p4"]
 
 
+def test_a_wide_junction_is_one_cut_and_the_street_wins():
+    from app.pgis_sidewalks import _cut_offsets
+    # a crosswalk 35 m after a sidewalk end (two groups, closer than 40 m): one cut, on the street
+    assert _cut_offsets([(100.0, False), (135.0, True)], 300.0, 200.0) == [135.0]
+    assert _cut_offsets([(100.0, True), (135.0, True)], 300.0, 200.0) == [100.0]
+    assert _cut_offsets([(10.0, True), (100.0, True), (290.0, True)], 300.0, 200.0) == [100.0]   # none at the ends
+
+
 def test_a_stretch_with_no_crossing_is_still_cut_evenly_and_an_alert_colours_only_its_block():
     from app.pgis_sidewalks import MAX_SECTION_M, cut_sections
     line = _pgis_line("p5", [[24.1100, 56.95009], [24.1199, 56.95009]])        # ~601 m, nothing crosses it

@@ -51,6 +51,7 @@ CUT_NEAR_M = 25.0      # a street junction or another sidewalk's end this close 
 CUT_ACROSS = 0.707     # ...another sidewalk only if it runs across the line (more than 45°), not alongside it
 CUT_CLUSTER_M = 30.0   # cuts closer together than this are one crossing: cut once, in its middle
 CUT_END_M = 20.0       # no cut this close to a line's own ends (no stubs)
+CUT_MIN_M = 40.0       # nor this close to the cut before it (a wide junction's crosswalks are one crossing)
 MAX_SECTION_M = 200.0  # a stretch with no known crossing is still cut, evenly, into pieces at most this long
 CROSSINGS = ROOT / "config" / "riga_crossings.json"     # OSM street junctions + crosswalks, all of Riga
 OSM_BLOCKS = ROOT / "config" / "riga_sidewalks.geojson"  # OSM blocks of the centre: 3+ street ends = a junction
@@ -203,21 +204,27 @@ def _end_dir(xy: list, cum: list, at_start: bool) -> tuple:
 def _cut_offsets(cuts: list, total: float, max_m: float) -> list:
     """Raw cuts (offset along the line, strong) -> the final cut positions. Cuts within CUT_CLUSTER_M of
     each other are one crossing, cut once: on the street if one is there (strong: OSM), else in the middle
-    of the sidewalk ends. No cut near the line's ends or right after another; then every part still
-    longer than max_m is split evenly."""
+    of the sidewalk ends. No cut near the line's ends; of two cuts closer than CUT_MIN_M, the one on a
+    street stays (else the first). Then every part still longer than max_m is split evenly."""
     groups = []
     for c in sorted(cuts):
         if groups and c[0] - groups[-1][0][0] <= CUT_CLUSTER_M:
             groups[-1].append(c)
         else:
             groups.append([c])
-    marks = [0.0]
+    kept = []  # (offset, on a street)
     for g in groups:
-        pick = [o for o, strong in g if strong] or [o for o, _ in g]
+        strong = [o for o, s in g if s]
+        pick = strong or [o for o, _ in g]
         at = sum(pick) / len(pick)
-        if CUT_END_M <= at <= total - CUT_END_M and at - marks[-1] >= CUT_END_M:
-            marks.append(at)
-    marks.append(total)
+        if not CUT_END_M <= at <= total - CUT_END_M:
+            continue
+        if kept and at - kept[-1][0] < CUT_MIN_M:
+            if strong and not kept[-1][1]:
+                kept[-1] = (at, True)
+            continue
+        kept.append((at, bool(strong)))
+    marks = [0.0] + [o for o, _ in kept] + [total]
     out = []
     for a, b in zip(marks, marks[1:]):
         n = max(1, math.ceil((b - a) / max_m - 1e-9))

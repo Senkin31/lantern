@@ -37,7 +37,7 @@ On Windows, use `127.0.0.1` rather than `localhost`: `localhost` tries IPv6 firs
 
 ### What the inspector sees
 
-The screens use a plain public-service look: light only, a navy header with the service name and a **Prototype** label, white panels with thin borders, square corners, and no emoji. The footer says it is a prototype and not an official service. There is no coat of arms and no city or agency branding.
+The screens use a plain public-service look: light only, a navy header with the service name and a **Prototype** label, white panels with thin borders, square corners, and no emoji. The footer says it is a prototype and not an official service. There is no coat of arms and no city or agency branding. The resident form (`/report`) and the Telegram Mini App (`/tg`) use the same look; the Mini App also asks Telegram to paint its own bar navy where the client allows it.
 
 - **Tabs:** Today's visits, All cases, Resident reports, Statistics (LV: Šodienas apsekošana, Visi gadījumi, Iedzīvotāju ziņojumi, Statistika). In Latvian an alert is a *gadījums* (case), so it does not clash with *brīdinājums* (the warning to the contractor).
 - **List row:** place and district, "No. X · contractor · camera · time ago", the status tag, and only the flags worth a glance (overdue, high urgency, possible ice, complaint without a camera, report to review, problem place).

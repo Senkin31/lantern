@@ -10,64 +10,70 @@
 
   const T = {
     lv: {
+      service: "Ziņojumi par ietvēm ziemā", proto: "Prototips",
+      proto_note: "Prototips, izveidots RobotHack 2026. Nav nevienas iestādes oficiāls pakalpojums.",
       title: "Ziņot par ietvi", lead: "Nofotografē vietu tagad. Foto un tava atrašanās vieta aizies kopā.",
       cam_starting: "Atver kameru…",
       cam_denied: "Kamerai nav atļaujas. Atļauj kameru Telegram tālruņa iestatījumos vai izmanto tālruņa kameru zemāk.",
       cam_none: "Šeit kamera neatveras. Izmanto tālruņa kameru zemāk.",
       fallback: "Izmantot tālruņa kameru", retake: "Pārņemt", send: "Nosūtīt", sending: "Sūta…",
-      loc_wait: "📍 Nosaka atrašanās vietu…", loc_ok: "📍 Vieta noteikta, precizitāte {m} m",
-      loc_rough: "📡 Tikai aptuvena vieta (±{m} m). Ieslēdz GPS vai izej ārā; nosūtīt var arī tā.",
-      loc_denied: "📍 Atrašanās vietai nav atļaujas. Atļauj to un mēģini vēlreiz.",
-      loc_retry: "Mēģināt vēlreiz", loc_need: "📍 Pagaidi, kamēr nosaka vietu, tad sūti.",
+      loc_wait: "Nosaka atrašanās vietu…", loc_ok: "Vieta noteikta, precizitāte {m} m",
+      loc_rough: "Tikai aptuvena vieta (±{m} m). Ieslēdz GPS vai izej ārā; nosūtīt var arī tā.",
+      loc_denied: "Atrašanās vietai nav atļaujas. Atļauj to un mēģini vēlreiz.",
+      loc_retry: "Mēģināt vēlreiz", loc_need: "Pagaidi, kamēr nosaka vietu, tad sūti.",
       close: "Aizvērt",
       privacy: "Foto tiek uzņemts tikai šeit, galerija netiek izmantota. Atrašanās vietu ņemam tikai šim ziņojumam.",
       desktop: "Atver šo tālrunī: Lantern vajag tālruņa kameru un atrašanās vietu.",
-      no_pass: "Atver formu no Lantern bota (poga 📸). Saite ir personiska.",
+      no_pass: "Atver formu no Lantern bota (poga «Ziņot par ietvi»). Saite ir personiska.",
       res_accept: "Paldies! Ziņojums pieņemts un nodots inspektoram.",
       res_review: "Paldies! Inspektors pārbaudīs foto.",
-      res_reject: "Šajā foto neredzam problēmu uz ietves (sniegs, ledus, lāstekas, aizšķērsots ceļš), tāpēc pieteikums netika izveidots. Nofotografē ietvi tuvāk.", again: "📸 Fotografēt vēlreiz",
+      res_reject: "Šajā foto neredzam problēmu uz ietves (sniegs, ledus, lāstekas, aizšķērsots ceļš), tāpēc pieteikums netika izveidots. Nofotografē ietvi tuvāk.", again: "Fotografēt vēlreiz",
       res_ticket: "Pieteikums", err_send: "Neizdevās nosūtīt. Mēģini vēlreiz.",
       err_area: "Šī vieta ir ārpus Rīgas.", err_many: "Pārāk daudz ziņojumu. Mēģini vēlāk.",
       err_pass: "Saite novecojusi. Nosūti botam /start un atver formu vēlreiz.",
     },
     en: {
+      service: "Winter sidewalk reports", proto: "Prototype",
+      proto_note: "Prototype made at RobotHack 2026. Not an official service of any authority.",
       title: "Report a sidewalk", lead: "Take the photo now. The photo and where you are go together.",
       cam_starting: "Opening the camera…",
       cam_denied: "Camera access is blocked. Allow the camera for Telegram in the phone settings, or use the phone camera below.",
       cam_none: "The camera does not open here. Use the phone camera below.",
       fallback: "Use the phone camera", retake: "Retake", send: "Send", sending: "Sending…",
-      loc_wait: "📍 Finding your location…", loc_ok: "📍 Location found, accurate to {m} m",
-      loc_rough: "📡 Only a rough location (±{m} m). Turn on GPS or step outside; you can still send.",
-      loc_denied: "📍 Location access is off. Allow it, then try again.",
-      loc_retry: "Try again", loc_need: "📍 Wait for the location, then send.",
+      loc_wait: "Finding your location…", loc_ok: "Location found, accurate to {m} m",
+      loc_rough: "Only a rough location (±{m} m). Turn on GPS or step outside; you can still send.",
+      loc_denied: "Location access is off. Allow it, then try again.",
+      loc_retry: "Try again", loc_need: "Wait for the location, then send.",
       close: "Close",
       privacy: "The photo is taken only here, the gallery is never used. Your location is used for this report only.",
       desktop: "Open this on your phone: Lantern needs the phone's camera and location.",
-      no_pass: "Open the form from the Lantern bot (the 📸 button). The link is personal.",
+      no_pass: "Open the form from the Lantern bot (the «Report a sidewalk» button). The link is personal.",
       res_accept: "Thank you! Report accepted and passed to the inspector.",
       res_review: "Thank you! An inspector will check the photo.",
-      res_reject: "We can't see a sidewalk problem in this photo (snow, ice, icicles, a blocked path), so no ticket was created. Take a closer photo of the sidewalk.", again: "📸 Take another photo",
+      res_reject: "We can't see a sidewalk problem in this photo (snow, ice, icicles, a blocked path), so no ticket was created. Take a closer photo of the sidewalk.", again: "Take another photo",
       res_ticket: "Ticket", err_send: "Could not send. Please try again.",
       err_area: "This place is outside Riga.", err_many: "Too many reports. Try again later.",
       err_pass: "The link has expired. Send /start to the bot and open the form again.",
     },
     ru: {
+      service: "Сообщения о тротуарах зимой", proto: "Прототип",
+      proto_note: "Прототип, сделанный на RobotHack 2026. Не официальная услуга какого-либо учреждения.",
       title: "Сообщить о тротуаре", lead: "Сфотографируйте место сейчас. Фото и ваше местоположение уйдут вместе.",
       cam_starting: "Открываем камеру…",
       cam_denied: "Нет доступа к камере. Разрешите камеру для Telegram в настройках телефона или используйте камеру телефона ниже.",
       cam_none: "Камера здесь не открывается. Используйте камеру телефона ниже.",
       fallback: "Камера телефона", retake: "Переснять", send: "Отправить", sending: "Отправляем…",
-      loc_wait: "📍 Определяем местоположение…", loc_ok: "📍 Место определено, точность {m} м",
-      loc_rough: "📡 Только примерное место (±{m} м). Включите GPS или выйдите на улицу; отправить можно и так.",
-      loc_denied: "📍 Нет доступа к местоположению. Разрешите и попробуйте снова.",
-      loc_retry: "Попробовать снова", loc_need: "📍 Дождитесь местоположения, затем отправьте.",
+      loc_wait: "Определяем местоположение…", loc_ok: "Место определено, точность {m} м",
+      loc_rough: "Только примерное место (±{m} м). Включите GPS или выйдите на улицу; отправить можно и так.",
+      loc_denied: "Нет доступа к местоположению. Разрешите и попробуйте снова.",
+      loc_retry: "Попробовать снова", loc_need: "Дождитесь местоположения, затем отправьте.",
       close: "Закрыть",
       privacy: "Фото делается только здесь, галерея не используется. Местоположение берём только для этого сообщения.",
       desktop: "Откройте это на телефоне: Lantern нужны камера и местоположение телефона.",
-      no_pass: "Откройте форму из бота Lantern (кнопка 📸). Ссылка личная.",
+      no_pass: "Откройте форму из бота Lantern (кнопка «Сообщить о тротуаре»). Ссылка личная.",
       res_accept: "Спасибо! Сообщение принято и передано инспектору.",
       res_review: "Спасибо! Инспектор проверит фото.",
-      res_reject: "На этом фото не видно проблемы на тротуаре (снег, лёд, сосульки, перекрытый проход), поэтому заявка не создана. Сфотографируйте тротуар поближе.", again: "📸 Снять ещё раз",
+      res_reject: "На этом фото не видно проблемы на тротуаре (снег, лёд, сосульки, перекрытый проход), поэтому заявка не создана. Сфотографируйте тротуар поближе.", again: "Снять ещё раз",
       res_ticket: "Заявка", err_send: "Не удалось отправить. Попробуйте снова.",
       err_area: "Это место за пределами Риги.", err_many: "Слишком много сообщений. Попробуйте позже.",
       err_pass: "Ссылка устарела. Отправьте боту /start и откройте форму заново.",
@@ -95,7 +101,7 @@
   if (tg) {
     tg.ready();
     tg.expand();
-    document.documentElement.dataset.theme = tg.colorScheme === "dark" ? "dark" : "light";
+    try { tg.setHeaderColor("#0b3a6b"); tg.setBackgroundColor("#eef1f4"); } catch (e) { /* older Telegram: keep its colours */ }
   }
 
   function stop(msgKey) {
@@ -259,7 +265,7 @@
     stream = null;
     $("shoot").hidden = true;
     $("done").hidden = false;
-    $("res-icon").textContent = rejected ? "🤷" : rel === "review" ? "🔎" : "✅";
+    $("res-icon").className = "mark " + (rejected ? "reject" : rel === "review" ? "review" : "ok");
     $("res-text").textContent = t(rejected ? "res_reject" : rel === "review" ? "res_review" : "res_accept");
     $("res-ticket").textContent = rejected ? "" : `${t("res_ticket")}: ${body.ticket}`;
     $("again").hidden = !rejected;

@@ -6,6 +6,8 @@
   const I18N = {
     lv: {
       page_title: "Lantern — ziņot par ietvi",
+      service: "Ziņojumi par ietvēm ziemā", proto: "Prototips",
+      proto_note: "Prototips, izveidots RobotHack 2026. Nav nevienas iestādes oficiāls pakalpojums.",
       title: "Ziņo par bīstamu ietvi",
       lead: "Foto un vieta — 15 sekundes. Pārējo MI nolasīs no foto.",
       photo_h: "Foto", photo_btn: "Uzņemt vai izvēlēties foto", photo_change: "Mainīt foto",
@@ -53,6 +55,8 @@
     },
     en: {
       page_title: "Lantern — report a sidewalk",
+      service: "Winter sidewalk reports", proto: "Prototype",
+      proto_note: "Prototype made at RobotHack 2026. Not an official service of any authority.",
       title: "Report a dangerous sidewalk",
       lead: "A photo and the place — 15 seconds. The AI reads the rest from the photo.",
       photo_h: "Photo", photo_btn: "Take or choose a photo", photo_change: "Change photo",
@@ -100,6 +104,8 @@
     },
     ru: {
       page_title: "Lantern — сообщить о тротуаре",
+      service: "Сообщения о тротуарах зимой", proto: "Прототип",
+      proto_note: "Прототип, сделанный на RobotHack 2026. Не официальная услуга какого-либо учреждения.",
       title: "Сообщите об опасном тротуаре",
       lead: "Фото и место — 15 секунд. Остальное ИИ поймёт по фото.",
       photo_h: "Фото", photo_btn: "Сделать или выбрать фото", photo_change: "Заменить фото",
@@ -232,7 +238,7 @@
     state.loc_source = source;
     if (!marker) {
       const icon = L.divIcon({ className: "", html: '<div class="pin"></div>', iconSize: [30, 30], iconAnchor: [15, 30] });
-      marker = L.marker([lat, lon], { draggable: true, icon, keyboard: true, title: "📍" }).addTo(map);
+      marker = L.marker([lat, lon], { draggable: true, icon, keyboard: true, title: tr("loc_h") }).addTo(map);
       marker.on("dragend", () => { const p = marker.getLatLng(); setPoint(p.lat, p.lng); setLocMsg("loc_set", {}, "good"); });
     } else {
       marker.setLatLng([lat, lon]);
@@ -336,7 +342,6 @@
   }
   function renderDone(data) {
     const kind = data.relevant === "reject" ? "reject" : data.relevant === "review" ? "review" : "ok";
-    $("done-icon").textContent = kind === "reject" ? "🙏" : "🏮";
     $("done-icon").className = "done-icon" + (kind === "reject" ? " reject" : "");
     $("done-title").textContent = tr("done_" + kind + "_t");
     $("done-text").textContent = tr("done_" + kind);

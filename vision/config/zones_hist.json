@@ -1,0 +1,111 @@
+{
+ "note": "Zones for harvested Fintraffic cameras (training / testing only). Fintraffic, CC BY 4.0.",
+ "zones": {
+  "C1259102": {
+   "zone_id": "C1259102:path",
+   "name": "vt20 Kiiminki, Jaali - footpath between guardrail and noise fence",
+   "lat": 65.094391,
+   "lon": 25.682395,
+   "image_size": [
+    1280,
+    720
+   ],
+   "place_type": "footpath",
+   "points": [
+    [
+     700,
+     305
+    ],
+    [
+     867,
+     352
+    ],
+    [
+     973,
+     385
+    ],
+    [
+     1100,
+     425
+    ],
+    [
+     1240,
+     472
+    ],
+    [
+     1240,
+     540
+    ],
+    [
+     1200,
+     540
+    ],
+    [
+     987,
+     458
+    ],
+    [
+     780,
+     372
+    ],
+    [
+     700,
+     340
+    ]
+   ]
+  },
+  "C1264803": {
+   "zone_id": "C1264803:path",
+   "name": "st847 Oulu, Aimarautio - pedestrian/bike path on the bridge",
+   "lat": 64.984486,
+   "lon": 25.47795,
+   "image_size": [
+    1280,
+    720
+   ],
+   "place_type": "footpath",
+   "points": [
+    [
+     1010,
+     150
+    ],
+    [
+     1105,
+     140
+    ],
+    [
+     1090,
+     300
+    ],
+    [
+     1070,
+     450
+    ],
+    [
+     1045,
+     600
+    ],
+    [
+     1025,
+     720
+    ],
+    [
+     690,
+     720
+    ],
+    [
+     760,
+     560
+    ],
+    [
+     850,
+     400
+    ],
+    [
+     930,
+     280
+    ]
+   ]
+  }
+ }
+}

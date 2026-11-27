@@ -1,0 +1,10 @@
+# model + camera worker (works on x86 and Windows ARM, no torch needed)
+onnxruntime>=1.18
+numpy
+pillow
+# service.py (/analyze, /classify, media)
+fastapi
+uvicorn
+python-multipart
+openai
+python-dotenv

@@ -1,0 +1,889 @@
+{
+ "version": 2,
+ "updated": "2026-11-25",
+ "cameras": [
+  {
+   "camera_id": "C1254701",
+   "source": "fintraffic",
+   "name": "Kajaani, Tie 6",
+   "lat": 64.219485,
+   "lon": 27.729053,
+   "district": "demo-north",
+   "place_type": "sidewalk",
+   "near_sensitive": false,
+   "reference_frame": "",
+   "image_size": [
+    1280,
+    720
+   ],
+   "zones": [
+    {
+     "zone_id": "C1254701:path",
+     "label": "path",
+     "points": [
+      [
+       20,
+       100
+      ],
+      [
+       105,
+       92
+      ],
+      [
+       120,
+       160
+      ],
+      [
+       108,
+       300
+      ],
+      [
+       78,
+       440
+      ],
+      [
+       45,
+       540
+      ],
+      [
+       0,
+       590
+      ],
+      [
+       0,
+       150
+      ]
+     ],
+     "points_norm": [
+      [
+       0.0156,
+       0.1389
+      ],
+      [
+       0.082,
+       0.1278
+      ],
+      [
+       0.0938,
+       0.2222
+      ],
+      [
+       0.0844,
+       0.4167
+      ],
+      [
+       0.0609,
+       0.6111
+      ],
+      [
+       0.0352,
+       0.75
+      ],
+      [
+       0.0,
+       0.8194
+      ],
+      [
+       0.0,
+       0.2083
+      ]
+     ],
+     "map_polygon": [
+      [
+       27.729173,
+       64.219615
+      ],
+      [
+       27.729533,
+       64.219615
+      ],
+      [
+       27.729533,
+       64.219855
+      ],
+      [
+       27.729173,
+       64.219855
+      ]
+     ]
+    }
+   ],
+   "notes": "Images: Fintraffic / digitraffic.fi, CC BY 4.0. map_polygon is approximate (camera direction not surveyed). Zone redrawn 25.11 to the footpath only (the council pointed out that the strip by the trees is a grass verge)."
+  },
+  {
+   "camera_id": "C1257002",
+   "source": "fintraffic",
+   "name": "Oulu, Limingantie",
+   "lat": 64.955832,
+   "lon": 25.504861,
+   "district": "demo-north",
+   "place_type": "crossing",
+   "near_sensitive": false,
+   "reference_frame": "",
+   "image_size": [
+    1280,
+    720
+   ],
+   "zones": [
+    {
+     "zone_id": "C1257002:sidewalk",
+     "label": "crossing_area",
+     "points": [
+      [
+       0,
+       330
+      ],
+      [
+       235,
+       322
+      ],
+      [
+       160,
+       445
+      ],
+      [
+       0,
+       452
+      ]
+     ],
+     "points_norm": [
+      [
+       0.0,
+       0.4583
+      ],
+      [
+       0.1836,
+       0.4472
+      ],
+      [
+       0.125,
+       0.6181
+      ],
+      [
+       0.0,
+       0.6278
+      ]
+     ],
+     "map_polygon": [
+      [
+       25.504381,
+       64.956162
+      ],
+      [
+       25.504741,
+       64.956162
+      ],
+      [
+       25.504741,
+       64.956402
+      ],
+      [
+       25.504381,
+       64.956402
+      ]
+     ]
+    }
+   ],
+   "notes": "Images: Fintraffic / digitraffic.fi, CC BY 4.0. map_polygon is approximate (camera direction not surveyed). Roadway zone removed 25.11; the remaining zone is the pedestrian crossing area with the island.",
+   "active": true
+  },
+  {
+   "camera_id": "C1052301",
+   "source": "fintraffic",
+   "name": "Vaasa, Kotiranta (Tie 8)",
+   "lat": 63.102269,
+   "lon": 21.641771,
+   "district": "demo-north",
+   "place_type": "path",
+   "near_sensitive": false,
+   "reference_frame": "",
+   "image_size": [
+    704,
+    576
+   ],
+   "active": true,
+   "zones": [
+    {
+     "zone_id": "C1052301:path",
+     "label": "path",
+     "points": [
+      [
+       0,
+       345
+      ],
+      [
+       40,
+       338
+      ],
+      [
+       110,
+       385
+      ],
+      [
+       185,
+       455
+      ],
+      [
+       240,
+       530
+      ],
+      [
+       262,
+       576
+      ],
+      [
+       0,
+       576
+      ]
+     ],
+     "points_norm": [
+      [
+       0.0,
+       0.599
+      ],
+      [
+       0.0568,
+       0.5868
+      ],
+      [
+       0.1562,
+       0.6684
+      ],
+      [
+       0.2628,
+       0.7899
+      ],
+      [
+       0.3409,
+       0.9201
+      ],
+      [
+       0.3722,
+       1.0
+      ],
+      [
+       0.0,
+       1.0
+      ]
+     ],
+     "map_polygon": [
+      [
+       21.641471,
+       63.102019
+      ],
+      [
+       21.641721,
+       63.102019
+      ],
+      [
+       21.641721,
+       63.102219
+      ],
+      [
+       21.641471,
+       63.102219
+      ]
+     ]
+    }
+   ],
+   "notes": "Images: Fintraffic / digitraffic.fi, CC BY 4.0. Camera position from the Digitraffic station API (vt8_Vaasa_Kotiranta); map_polygon is approximate."
+  },
+  {
+   "camera_id": "C0462200",
+   "source": "fintraffic",
+   "name": "Lahti, Uudenmaankatu",
+   "lat": 60.93605,
+   "lon": 25.632893,
+   "district": "demo-centre",
+   "place_type": "sidewalk",
+   "near_sensitive": false,
+   "reference_frame": "",
+   "image_size": [
+    1280,
+    720
+   ],
+   "zones": [
+    {
+     "zone_id": "C0462200:sidewalk",
+     "label": "sidewalk",
+     "points": [
+      [
+       0,
+       290
+      ],
+      [
+       200,
+       232
+      ],
+      [
+       400,
+       200
+      ],
+      [
+       560,
+       152
+      ],
+      [
+       650,
+       140
+      ],
+      [
+       640,
+       165
+      ],
+      [
+       400,
+       240
+      ],
+      [
+       200,
+       298
+      ],
+      [
+       0,
+       365
+      ]
+     ],
+     "points_norm": [
+      [
+       0.0,
+       0.4028
+      ],
+      [
+       0.1562,
+       0.3222
+      ],
+      [
+       0.3125,
+       0.2778
+      ],
+      [
+       0.4375,
+       0.2111
+      ],
+      [
+       0.5078,
+       0.1944
+      ],
+      [
+       0.5,
+       0.2292
+      ],
+      [
+       0.3125,
+       0.3333
+      ],
+      [
+       0.1562,
+       0.4139
+      ],
+      [
+       0.0,
+       0.5069
+      ]
+     ],
+     "map_polygon": [
+      [
+       25.633013,
+       60.93618
+      ],
+      [
+       25.633373,
+       60.93618
+      ],
+      [
+       25.633373,
+       60.93642
+      ],
+      [
+       25.633013,
+       60.93642
+      ]
+     ]
+    }
+   ],
+   "notes": "Images: Fintraffic / digitraffic.fi, CC BY 4.0. map_polygon is approximate (camera direction not surveyed). Not used in the demo: the zones do not cover a sidewalk (Lahti: snowy verge; Oulu: roadway and zebra crossing).",
+   "active": false
+  },
+  {
+   "camera_id": "C0952003",
+   "source": "fintraffic",
+   "name": "Jyväskylä, Palokka (bridge)",
+   "lat": 62.290266,
+   "lon": 25.720407,
+   "district": "demo-centre",
+   "place_type": "sidewalk",
+   "near_sensitive": false,
+   "reference_frame": "",
+   "image_size": [
+    1280,
+    720
+   ],
+   "zones": [
+    {
+     "zone_id": "C0952003:sidewalk",
+     "label": "sidewalk",
+     "points": [
+      [
+       545,
+       140
+      ],
+      [
+       560,
+       125
+      ],
+      [
+       700,
+       210
+      ],
+      [
+       850,
+       310
+      ],
+      [
+       1010,
+       410
+      ],
+      [
+       1170,
+       510
+      ],
+      [
+       1280,
+       580
+      ],
+      [
+       1280,
+       720
+      ],
+      [
+       1180,
+       720
+      ],
+      [
+       1140,
+       680
+      ],
+      [
+       1050,
+       610
+      ],
+      [
+       920,
+       510
+      ],
+      [
+       810,
+       410
+      ],
+      [
+       750,
+       310
+      ],
+      [
+       615,
+       210
+      ]
+     ],
+     "points_norm": [
+      [
+       0.4258,
+       0.1944
+      ],
+      [
+       0.4375,
+       0.1736
+      ],
+      [
+       0.5469,
+       0.2917
+      ],
+      [
+       0.6641,
+       0.4306
+      ],
+      [
+       0.7891,
+       0.5694
+      ],
+      [
+       0.9141,
+       0.7083
+      ],
+      [
+       1.0,
+       0.8056
+      ],
+      [
+       1.0,
+       1.0
+      ],
+      [
+       0.9219,
+       1.0
+      ],
+      [
+       0.8906,
+       0.9444
+      ],
+      [
+       0.8203,
+       0.8472
+      ],
+      [
+       0.7188,
+       0.7083
+      ],
+      [
+       0.6328,
+       0.5694
+      ],
+      [
+       0.5859,
+       0.4306
+      ],
+      [
+       0.4805,
+       0.2917
+      ]
+     ],
+     "map_polygon": [
+      [
+       25.720527,
+       62.290396
+      ],
+      [
+       25.720887,
+       62.290396
+      ],
+      [
+       25.720887,
+       62.290636
+      ],
+      [
+       25.720527,
+       62.290636
+      ]
+     ]
+    }
+   ],
+   "notes": "Images: Fintraffic / digitraffic.fi, CC BY 4.0. map_polygon is approximate (camera direction not surveyed). Zone redrawn 25.11: only the sidewalk between the road edge and the railing (the old one cut into the car lane)."
+  },
+  {
+   "camera_id": "skyfinder_7233",
+   "source": "skyfinder",
+   "name": "SkyFinder 7233 — pedestrian street (Bavaria)",
+   "lat": 47.68,
+   "lon": 11.2,
+   "place_type": "sidewalk",
+   "near_sensitive": false,
+   "reference_frame": "20130605_140143.jpg",
+   "image_size": [
+    1280,
+    720
+   ],
+   "zones": [
+    {
+     "label": "path",
+     "points": [
+      [
+       0,
+       720
+      ],
+      [
+       0,
+       690
+      ],
+      [
+       150,
+       650
+      ],
+      [
+       500,
+       505
+      ],
+      [
+       700,
+       420
+      ],
+      [
+       790,
+       385
+      ],
+      [
+       830,
+       385
+      ],
+      [
+       880,
+       470
+      ],
+      [
+       940,
+       600
+      ],
+      [
+       985,
+       720
+      ]
+     ],
+     "points_norm": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       0.0,
+       0.9583
+      ],
+      [
+       0.1172,
+       0.9028
+      ],
+      [
+       0.3906,
+       0.7014
+      ],
+      [
+       0.5469,
+       0.5833
+      ],
+      [
+       0.6172,
+       0.5347
+      ],
+      [
+       0.6484,
+       0.5347
+      ],
+      [
+       0.6875,
+       0.6528
+      ],
+      [
+       0.7344,
+       0.8333
+      ],
+      [
+       0.7695,
+       1.0
+      ]
+     ],
+     "zone_id": "skyfinder_7233:path"
+    }
+   ],
+   "notes": "Training only (SkyFinder archive). Do not show on the map.",
+   "district": "training"
+  },
+  {
+   "camera_id": "skyfinder_10917",
+   "source": "skyfinder",
+   "name": "SkyFinder 10917 — town square with fountain (Switzerland)",
+   "lat": 47.36,
+   "lon": 7.15,
+   "place_type": "square",
+   "near_sensitive": false,
+   "reference_frame": "20111001_115406.jpg",
+   "image_size": [
+    1280,
+    960
+   ],
+   "zones": [
+    {
+     "label": "sidewalk",
+     "points": [
+      [
+       350,
+       470
+      ],
+      [
+       375,
+       520
+      ],
+      [
+       300,
+       620
+      ],
+      [
+       200,
+       760
+      ],
+      [
+       115,
+       900
+      ],
+      [
+       85,
+       960
+      ],
+      [
+       0,
+       960
+      ],
+      [
+       0,
+       900
+      ],
+      [
+       150,
+       720
+      ],
+      [
+       270,
+       570
+      ]
+     ],
+     "points_norm": [
+      [
+       0.2734,
+       0.4896
+      ],
+      [
+       0.293,
+       0.5417
+      ],
+      [
+       0.2344,
+       0.6458
+      ],
+      [
+       0.1562,
+       0.7917
+      ],
+      [
+       0.0898,
+       0.9375
+      ],
+      [
+       0.0664,
+       1.0
+      ],
+      [
+       0.0,
+       1.0
+      ],
+      [
+       0.0,
+       0.9375
+      ],
+      [
+       0.1172,
+       0.75
+      ],
+      [
+       0.2109,
+       0.5938
+      ]
+     ],
+     "zone_id": "skyfinder_10917:sidewalk"
+    },
+    {
+     "label": "square",
+     "points": [
+      [
+       565,
+       420
+      ],
+      [
+       720,
+       440
+      ],
+      [
+       700,
+       530
+      ],
+      [
+       800,
+       630
+      ],
+      [
+       1000,
+       680
+      ],
+      [
+       1180,
+       710
+      ],
+      [
+       1280,
+       730
+      ],
+      [
+       1280,
+       960
+      ],
+      [
+       565,
+       960
+      ],
+      [
+       530,
+       800
+      ],
+      [
+       540,
+       640
+      ],
+      [
+       560,
+       520
+      ]
+     ],
+     "points_norm": [
+      [
+       0.4414,
+       0.4375
+      ],
+      [
+       0.5625,
+       0.4583
+      ],
+      [
+       0.5469,
+       0.5521
+      ],
+      [
+       0.625,
+       0.6562
+      ],
+      [
+       0.7812,
+       0.7083
+      ],
+      [
+       0.9219,
+       0.7396
+      ],
+      [
+       1.0,
+       0.7604
+      ],
+      [
+       1.0,
+       1.0
+      ],
+      [
+       0.4414,
+       1.0
+      ],
+      [
+       0.4141,
+       0.8333
+      ],
+      [
+       0.4219,
+       0.6667
+      ],
+      [
+       0.4375,
+       0.5417
+      ]
+     ],
+     "zone_id": "skyfinder_10917:square"
+    }
+   ],
+   "notes": "Training only (SkyFinder archive). Do not show on the map.",
+   "district": "training"
+  }
+ ]
+}

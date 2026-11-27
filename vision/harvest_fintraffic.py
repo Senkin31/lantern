@@ -16,7 +16,7 @@ Standard library only, Python 3.8+.
 
 Examples:
   py harvest_fintraffic.py --plan                              # show which cameras would be used, download nothing
-  py harvest_fintraffic.py --out C:/Users/nikit/Downloads/data/fintraffic_hist
+  py harvest_fintraffic.py --out <folder>
   py harvest_fintraffic.py --max-presets 150 --min-lat 63      # more cameras, further north
 
 Data: Fintraffic / digitraffic.fi, licence CC BY 4.0. Do not commit the images to the public repo.

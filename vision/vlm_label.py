@@ -1,7 +1,7 @@
 """
 Lantern: label harvested Fintraffic frames with the VLM (Kimi-K3) by the council rule, then let a person check them.
 
-  py vlm_label.py --frames C:/Users/nikit/Downloads/data/fintraffic_hist --zones config/zones_hist.json
+  py vlm_label.py --frames <frames folder> --zones config/zones_hist.json
 
 What it does:
   1. for every camera in the zones file, takes its daylight frames (sun > -3 deg, broken/tiny images skipped);

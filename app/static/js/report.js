@@ -307,9 +307,11 @@
         err.hidden = false;
         return;
       }
-      const mine = store.get("lantern_tickets", []);
-      mine.unshift({ ticket: data.ticket, at: new Date().toISOString(), relevant: data.relevant });
-      store.set("lantern_tickets", mine.slice(0, 10));
+      if (data.ticket) {  // a photo the AI rejects gets no ticket
+        const mine = store.get("lantern_tickets", []);
+        mine.unshift({ ticket: data.ticket, at: new Date().toISOString(), relevant: data.relevant });
+        store.set("lantern_tickets", mine.slice(0, 10));
+      }
       lastTicket = data;
       showDone(data);
     } catch (ex) {
@@ -326,8 +328,10 @@
     $("done-view").hidden = false;
     window.scrollTo(0, 0);
     renderDone(data);
-    checkTicket(data.ticket, $("done-status"));
     clearInterval(pollTimer);
+    $("done-status").textContent = "";
+    if (!data.ticket) return;
+    checkTicket(data.ticket, $("done-status"));
     if (data.relevant !== "reject") pollTimer = setInterval(() => checkTicket(data.ticket, $("done-status")), 15000);
   }
   function renderDone(data) {
@@ -336,7 +340,8 @@
     $("done-icon").className = "done-icon" + (kind === "reject" ? " reject" : "");
     $("done-title").textContent = tr("done_" + kind + "_t");
     $("done-text").textContent = tr("done_" + kind);
-    $("done-ticket").textContent = data.ticket;
+    $("done-ticket").textContent = data.ticket || "";
+    $("done-ticket").parentElement.hidden = !data.ticket;
   }
   $("again").addEventListener("click", () => {
     clearInterval(pollTimer);

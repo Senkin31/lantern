@@ -67,6 +67,9 @@ def coords_from_text(text: str) -> Optional[tuple]:
                 return lat, lon
     return None
 TRACK_DAYS = 7
+# the text buttons under the message field send their label; treat them as the commands
+BUTTON_COMMANDS = {t(key, L): cmd for key, cmd in (("btn_status", "/status"), ("btn_lang", "/lang"),
+                                                    ("btn_help", "/help")) for L in LANGS}
 STATUS_EVERY = 30.0
 NOTIFY_STATUSES = ("open", "done_reported", "reopened", "verified", "cleared_in_time")
 
@@ -183,26 +186,28 @@ class LanternBot:
         self.send(chat_id, t("choose_lang", "en"),
                   self.inline([[(LANG_NAMES[c], f"lang:{c}") for c in LANGS]]))
 
-    def app_markup(self, chat_id) -> Optional[dict]:
-        """Keyboard with the Mini App button and a fresh signed pass, or None when the app is off.
-        (In a private chat the chat id is the person's Telegram id.)"""
-        if not self.webapp_url:
-            return None
-        pass_ = make_pass(self.device_id(chat_id))
-        if not pass_:
-            return None
+    def app_on(self) -> bool:
+        return bool(self.webapp_url) and make_pass("probe") is not None
+
+    def main_markup(self, chat_id) -> dict:
+        """The buttons that always sit under the message field: 📸 Report (opens the Mini App with a fresh
+        signed pass, when it is on), then My reports / Language / Help. In a private chat the chat id is
+        the person's Telegram id."""
         L = self.lang(chat_id)
-        return {"keyboard": [[{"text": t("btn_app", L), "web_app": {"url": f"{self.webapp_url}/tg?t={pass_}&lang={L}"}}]],
-                "resize_keyboard": True, "is_persistent": True}
+        rows = []
+        if self.app_on():
+            url = f"{self.webapp_url}/tg?t={make_pass(self.device_id(chat_id))}&lang={L}"
+            rows.append([{"text": t("btn_app", L), "web_app": {"url": url}}])
+        rows.append([{"text": t("btn_status", L)}, {"text": t("btn_lang", L)}, {"text": t("btn_help", L)}])
+        return {"keyboard": rows, "resize_keyboard": True, "is_persistent": True}
 
     def ask_photo(self, chat_id) -> None:
-        markup = self.app_markup(chat_id)
-        if markup:  # photos come only from the app's live camera
+        if self.app_on():  # photos come only from the app's live camera
             self.drafts.pop(chat_id, None)
-            self.send(chat_id, t("ask_app", self.lang(chat_id)), markup)
+            self.send(chat_id, t("ask_app", self.lang(chat_id)), self.main_markup(chat_id))
             return
         self.drafts[chat_id] = {"step": "photo"}
-        self.send(chat_id, t("ask_photo", self.lang(chat_id)), {"remove_keyboard": True})
+        self.send(chat_id, t("ask_photo", self.lang(chat_id)), self.main_markup(chat_id))
 
     def ask_location(self, chat_id) -> None:
         L = self.lang(chat_id)
@@ -235,6 +240,7 @@ class LanternBot:
         user_id = (msg.get("from") or {}).get("id", chat_id)
         text = (msg.get("text") or "").strip()
         chat = self.state.chat(chat_id)
+        text = BUTTON_COMMANDS.get(text, text)  # "📋 My reports" -> /status, etc.
         if text.startswith("/"):
             cmd = text.split()[0].split("@")[0].lower()
             if cmd == "/start":
@@ -242,19 +248,19 @@ class LanternBot:
                     self.drafts[chat_id] = {"step": "lang"}
                     self.ask_lang(chat_id)
                 else:
-                    self.send(chat_id, t("welcome", self.lang(chat_id)))
+                    self.send(chat_id, t("welcome_app" if self.app_on() else "welcome", self.lang(chat_id)))
                     self.ask_photo(chat_id)
             elif cmd == "/lang":
                 self.drafts.setdefault(chat_id, {"step": "idle"})
                 self.ask_lang(chat_id)
             elif cmd == "/cancel":
                 self.drafts.pop(chat_id, None)
-                self.send(chat_id, t("cancelled", self.lang(chat_id)), {"remove_keyboard": True})
+                self.send(chat_id, t("cancelled", self.lang(chat_id)), self.main_markup(chat_id))
             elif cmd == "/status":
                 self.show_status(chat_id)
             else:
-                self.send(chat_id, t("help_app" if self.webapp_url else "help", self.lang(chat_id)),
-                                          self.app_markup(chat_id))
+                self.send(chat_id, t("help_app" if self.app_on() else "help", self.lang(chat_id)),
+                          self.main_markup(chat_id))
             return
 
         if not chat.get("lang"):
@@ -266,9 +272,9 @@ class LanternBot:
             self.on_app_data(chat_id, msg["web_app_data"].get("data"))
             return
         file_id, mime = self._photo_of(msg)
-        if self.webapp_url and (file_id or msg.get("location") or msg.get("venue")):
+        if self.app_on() and (file_id or msg.get("location") or msg.get("venue")):
             # a chat photo may be old or from the gallery: point to the app's live camera instead
-            self.send(chat_id, t("use_app", self.lang(chat_id)), self.app_markup(chat_id))
+            self.send(chat_id, t("use_app", self.lang(chat_id)), self.main_markup(chat_id))
             return
         if file_id:
             self.on_photo(chat_id, user_id, file_id, mime)
@@ -296,7 +302,7 @@ class LanternBot:
             self.send(chat_id, t("use_buttons", L))
         else:
             if not draft:
-                self.send(chat_id, t("welcome", L))
+                self.send(chat_id, t("welcome_app" if self.app_on() else "welcome", L))
             self.ask_photo(chat_id)
 
     @staticmethod
@@ -350,7 +356,7 @@ class LanternBot:
             self.state.save()
             reask = {"photo": self.ask_photo, "location": self.ask_location, "confirm": self.ask_confirm}
             if first or step not in reask:
-                self.send(chat_id, t("welcome", value))
+                self.send(chat_id, t("welcome_app" if self.app_on() else "welcome", value))
                 self.ask_photo(chat_id)
             else:
                 reask[step](chat_id)  # continue the report in the new language
@@ -360,8 +366,24 @@ class LanternBot:
                 self.submit(chat_id)
             else:
                 self.drafts.pop(chat_id, None)
-                self.send(chat_id, t("cancelled", self.lang(chat_id)))
+                self.send(chat_id, t("cancelled", self.lang(chat_id)), self.main_markup(chat_id))
         # stale buttons from an old message are ignored silently
+
+    def setup_profile(self) -> None:
+        """Command menu (the Menu button next to the message field) and the description people see in an
+        empty chat before pressing Start, in every bot language. Failures only log: the bot still works."""
+        cmds = ("start", "status", "lang", "help")
+        for L in (None,) + LANGS:  # None: the default for any other app language
+            code = L or "lv"
+            extra = {"language_code": L} if L else {}
+            calls = [("setMyCommands", {"commands": [{"command": c, "description": t(f"cmd_{c}", code)} for c in cmds]}),
+                     ("setMyDescription", {"description": t("bot_about", code)}),
+                     ("setMyShortDescription", {"short_description": t("bot_short", code)})]
+            for method, params in calls:
+                try:
+                    self.tg.call(method, **params, **extra)
+                except (TelegramError, httpx.HTTPError) as exc:
+                    log.warning("%s failed: %s", method, exc)
 
     # ------------------------------------------------------------------ server
     def submit(self, chat_id) -> None:
@@ -400,14 +422,15 @@ class LanternBot:
                markup: Optional[dict] = None) -> None:
         """Remember the ticket for status pushes and tell the person what the AI decided."""
         L = self.lang(chat_id)
+        if rel == "reject" or not ticket:  # the AI saw no sidewalk problem: no ticket was created
+            self.send(chat_id, t("rejected", L), markup or self.main_markup(chat_id))
+            return
         chat = self.state.chat(chat_id)
         chat["tickets"].append({"ticket": ticket, "sent_at": _iso(_now()), "relevant": rel,
-                                "alert_status": None, "done": rel == "reject"})
+                                "alert_status": None, "done": False})
         chat["tickets"] = chat["tickets"][-30:]
         self.state.save()
-        if rel == "reject":
-            text = t("rejected", L, ticket=ticket)
-        elif rel == "review":
+        if rel == "review":
             text = t("review", L, ticket=ticket)
         else:
             text = t("accepted", L, ticket=ticket)
@@ -415,7 +438,7 @@ class LanternBot:
                 text += "\n\n" + t("merged", L)
             if same_photo:
                 text += "\n\n" + t("same_photo", L)
-        self.send(chat_id, text, markup)
+        self.send(chat_id, text, markup or self.main_markup(chat_id))
 
     def on_app_data(self, chat_id, raw) -> None:
         """The Mini App finished: it hands back the ticket. Treat it as a claim and look it up on the server."""
@@ -430,7 +453,7 @@ class LanternBot:
         if any(x["ticket"] == ticket for x in self.state.chat(chat_id)["tickets"]):
             return
         self.follow(chat_id, ticket, st.get("relevant"), bool(st.get("alert_status")), False,
-                    self.app_markup(chat_id))  # fresh pass on the button for the next report
+                    self.main_markup(chat_id))  # fresh pass on the button for the next report
         log.info("report %s from the mini app: %s", ticket, st.get("relevant"))
 
     def _merged(self, ticket: str) -> bool:
@@ -559,7 +582,9 @@ def main() -> None:
         log.warning("WEBAPP_URL must be https (Telegram refuses other links); Mini App is off")
         webapp = ""
     log.info("mini app: %s", "on" if webapp else "off (photos from the chat)")
-    LanternBot(tg, api, state, webapp).run_forever()
+    bot = LanternBot(tg, api, state, webapp)
+    bot.setup_profile()
+    bot.run_forever()
 
 
 if __name__ == "__main__":

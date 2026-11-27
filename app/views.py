@@ -448,7 +448,7 @@ class Views:
     # ------------------------------------------------------------------ resident ticket
     def ticket_status(self, ticket: str) -> Optional[dict]:
         r = self.db.one("SELECT * FROM reports WHERE ticket = ?", (ticket,))
-        if r is None:
+        if r is None or r["relevant"] == "reject":  # rejected photos have no ticket for the resident
             return None
         out = {"ticket": r["ticket"], "received_at": r["received_at"], "relevant": r["relevant"],
                "state": "rejected" if r["relevant"] == "reject" else ("in_review" if r["relevant"] == "review"

@@ -70,12 +70,12 @@ T = {
         "ru": "🏮 Спасибо, сигнал принят!\nКод заявки: {ticket}\n\nИнспектор дополнительно проверит фото.",
     },
     "rejected": {
-        "lv": "Paldies! Diemžēl foto neizskatās pēc bīstamas ietves (sniegs, ledus, lāstekas), tāpēc "
-              "inspektoram to nenosūtījām. Ja kļūdījāmies — mēģini vēlreiz ar tuvāku foto.\nKods: {ticket}",
-        "en": "Thank you! Unfortunately the photo doesn't look like a sidewalk hazard (snow, ice, icicles), so it "
-              "was not sent to the inspector. If we got it wrong, try again with a closer photo.\nTicket: {ticket}",
-        "ru": "Спасибо! К сожалению, фото не похоже на опасный тротуар (снег, лёд, сосульки), поэтому "
-              "к инспектору оно не ушло. Если мы ошиблись — попробуйте ещё раз с фото поближе.\nКод: {ticket}",
+        "lv": "🤷 Šajā foto neredzam problēmu uz ietves (sniegs, ledus, lāstekas, aizšķērsots ceļš), tāpēc "
+              "pieteikums netika izveidots. Nofotografē ietvi tuvāk un mēģini vēlreiz.",
+        "en": "🤷 We can't see a sidewalk problem in this photo (snow, ice, icicles, a blocked path), so no "
+              "ticket was created. Take a closer photo of the sidewalk and try again.",
+        "ru": "🤷 На этом фото не видно проблемы на тротуаре (снег, лёд, сосульки, перекрытый проход), поэтому "
+              "заявка не создана. Сфотографируйте тротуар поближе и попробуйте снова.",
     },
     "too_many": {
         "lv": "⏳ Tu šodien jau esi nosūtījis daudz ziņojumu. Paldies! Lūdzu, mēģini vēlāk.",
@@ -109,6 +109,43 @@ T = {
     },
     "cancelled": {"lv": "Atcelts. Lai sāktu no jauna, nosūti foto.", "en": "Cancelled. Send a photo to start again.",
                   "ru": "Отменено. Чтобы начать заново, пришлите фото."},
+    "btn_status": {"lv": "📋 Mani pieteikumi", "en": "📋 My reports", "ru": "📋 Мои заявки"},
+    "btn_lang": {"lv": "🌐 Valoda", "en": "🌐 Language", "ru": "🌐 Язык"},
+    "btn_help": {"lv": "❓ Palīdzība", "en": "❓ Help", "ru": "❓ Помощь"},
+    "cmd_start": {"lv": "Jauns ziņojums", "en": "New report", "ru": "Новое сообщение"},
+    "cmd_status": {"lv": "Mani pieteikumi", "en": "My reports", "ru": "Мои заявки"},
+    "cmd_lang": {"lv": "Valoda", "en": "Language", "ru": "Язык"},
+    "cmd_help": {"lv": "Kā tas strādā", "en": "How it works", "ru": "Как это работает"},
+    "bot_short": {
+        "lv": "Ziņo par neiztīrītu ietvi Rīgā: foto + vieta. Bez vārda un tālruņa.",
+        "en": "Report an uncleared sidewalk in Riga: photo + place. No name or phone needed.",
+        "ru": "Сообщите о неубранном тротуаре в Риге: фото + место. Без имени и телефона.",
+    },
+    "bot_about": {
+        "lv": "🏮 Lantern palīdz Rīgai ātrāk notīrīt ietves.\n\nSpied START, tad «📸 Ziņot par ietvi»: "
+              "nofotografē sniegu, ledu vai lāstekas, un tālrunis pievienos vietu. Mākslīgais intelekts pārbauda "
+              "foto, un tikai tad signāls nonāk pie pilsētas inspektora.",
+        "en": "🏮 Lantern helps Riga clear sidewalks faster.\n\nPress START, then «📸 Report a sidewalk»: take a "
+              "photo of the snow, ice or icicles and the phone adds the place. AI checks the photo, and only then "
+              "the signal reaches the city inspector.",
+        "ru": "🏮 Lantern помогает Риге быстрее убирать тротуары.\n\nНажмите START, затем «📸 Сообщить о "
+              "тротуаре»: сфотографируйте снег, лёд или сосульки, а место добавит телефон. Нейросеть проверит "
+              "фото, и только после этого сигнал попадёт к инспектору города.",
+    },
+    "welcome_app": {
+        "lv": "🏮 Lantern — ziņo par neiztīrītām ietvēm Rīgā.\n\n"
+              "Spied «📸 Ziņot par ietvi» zemāk, nofotografē vietu, un tālrunis pievienos, kur tu esi. "
+              "Mākslīgais intelekts pārbauda foto, un tikai tad signāls nonāk pie pilsētas inspektora.\n\n"
+              "Tas papildina tālruni 1201, nevis aizstāj to. Mēs neprasām vārdu, tālruni vai e-pastu.",
+        "en": "🏮 Lantern — report uncleared sidewalks in Riga.\n\n"
+              "Press «📸 Report a sidewalk» below, take the photo, and the phone adds where you are. "
+              "AI checks the photo, and only then the signal reaches the city inspector.\n\n"
+              "This complements the 1201 phone line, it does not replace it. We never ask for your name, phone or email.",
+        "ru": "🏮 Lantern — сообщите о неубранном тротуаре в Риге.\n\n"
+              "Нажмите «📸 Сообщить о тротуаре» ниже, сфотографируйте место, а телефон добавит, где вы. "
+              "Нейросеть проверит фото, и только после этого сигнал попадёт к инспектору города.\n\n"
+              "Бот дополняет телефон 1201, а не заменяет его. Имя, телефон и e-mail мы не спрашиваем.",
+    },
     "btn_app": {"lv": "📸 Ziņot par ietvi", "en": "📸 Report a sidewalk", "ru": "📸 Сообщить о тротуаре"},
     "ask_app": {
         "lv": "Spied «📸 Ziņot par ietvi» zemāk. Lietotne uzņems foto tagad un pievienos vietu, kur tu esi.",

@@ -327,9 +327,12 @@ class Engine:
                         first_seen=ts, actor="system", note="resident report")
                     fresh = True
             counted = relevant == "accept" and not duplicate and reuse_of is None
-            ticket = new_ticket()
+            # a photo the model rejects gets no ticket: the row is kept (inspector's "rejected" list, spam
+            # checks) under an internal lowercase reference that the uppercase ticket lookup never matches
+            make = (lambda: "x" + secrets.token_hex(6)) if relevant == "reject" else new_ticket
+            ticket = make()
             while self.db.one("SELECT 1 FROM reports WHERE ticket = ?", (ticket,)):
-                ticket = new_ticket()
+                ticket = make()
             report_id = self.db.run(
                 "INSERT INTO reports(alert_id, ticket, channel, photo_path, lat, lon, passable, hazard, place_type, "
                 "comment, device_id, timestamp, relevant, ai_score, ai_hint, ai_note, counted, duplicate, received_at, "

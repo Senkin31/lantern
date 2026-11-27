@@ -135,12 +135,14 @@ def test_rejected_photo_and_bad_input(make_client, tmp_path):
     bot.handle_update(fake.msg(chat, text="тут сугроб"))                 # text at the Send step: use the buttons
     assert "Выберите одну из кнопок" in fake.texts(chat)[-1]
     bot.handle_update(fake.cb(chat, "ok:send"))
-    assert "не похоже на опасный тротуар" in fake.texts(chat)[-1]
+    assert "заявка не создана" in fake.texts(chat)[-1]                  # no ticket for a rejected photo
     rows = engine.db.q("SELECT * FROM reports")
     assert len(rows) == 1 and rows[0]["relevant"] == "reject" and rows[0]["alert_id"] is None
     assert rows[0]["hazard"] is None and rows[0]["place_type"] is None
     assert rows[0]["passable"] == "yes" and rows[0]["passable_by"] == "ai"   # the model saw nothing wrong
-    assert bot.check_statuses() == 0  # rejected tickets are not tracked
+    assert bot.state.chat(chat)["tickets"] == []                          # nothing to follow
+    assert client.get(f"/reports/ticket/{rows[0]['ticket']}").status_code == 404  # internal ref, not a ticket
+    assert bot.check_statuses() == 0
 
 
 def test_server_down_keeps_draft(make_client, tmp_path):

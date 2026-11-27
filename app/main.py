@@ -207,7 +207,8 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
             photo_sha256=sha, photo_dhash=dhash, ip_hash=ip_h, reuse_of=reuse_of, registration_no=registration_no)
         if rep["relevant"] == "reject" or rep["duplicate"] or rep["reuse_of"]:
             guard.strike(device)  # repeated rejects/duplicates -> sender muted for a day
-        return {"report_id": rep["id"], "ticket": rep["ticket"], "relevant": rep["relevant"],
+        return {"report_id": rep["id"], "ticket": None if rep["relevant"] == "reject" else rep["ticket"],
+                "relevant": rep["relevant"],
                 "alert_id": rep["alert_id"], "duplicate": bool(rep["duplicate"]),
                 "same_photo": rep["reuse_of"] is not None,
                 "ai_hint": rep["ai_hint"], "ai_note": rep["ai_note"]}

@@ -25,7 +25,7 @@
       no_pass: "Atver formu no Lantern bota (poga 📸). Saite ir personiska.",
       res_accept: "Paldies! Ziņojums pieņemts un nodots inspektoram.",
       res_review: "Paldies! Inspektors pārbaudīs foto.",
-      res_reject: "Paldies! Diemžēl foto neizskatās pēc bīstamas ietves.",
+      res_reject: "Šajā foto neredzam problēmu uz ietves (sniegs, ledus, lāstekas, aizšķērsots ceļš), tāpēc pieteikums netika izveidots. Nofotografē ietvi tuvāk.", again: "📸 Fotografēt vēlreiz",
       res_ticket: "Pieteikums", err_send: "Neizdevās nosūtīt. Mēģini vēlreiz.",
       err_area: "Šī vieta ir ārpus Rīgas.", err_many: "Pārāk daudz ziņojumu. Mēģini vēlāk.",
       err_pass: "Saite novecojusi. Nosūti botam /start un atver formu vēlreiz.",
@@ -46,7 +46,7 @@
       no_pass: "Open the form from the Lantern bot (the 📸 button). The link is personal.",
       res_accept: "Thank you! Report accepted and passed to the inspector.",
       res_review: "Thank you! An inspector will check the photo.",
-      res_reject: "Thank you! Unfortunately the photo does not look like a sidewalk hazard.",
+      res_reject: "We can't see a sidewalk problem in this photo (snow, ice, icicles, a blocked path), so no ticket was created. Take a closer photo of the sidewalk.", again: "📸 Take another photo",
       res_ticket: "Ticket", err_send: "Could not send. Please try again.",
       err_area: "This place is outside Riga.", err_many: "Too many reports. Try again later.",
       err_pass: "The link has expired. Send /start to the bot and open the form again.",
@@ -67,7 +67,7 @@
       no_pass: "Откройте форму из бота Lantern (кнопка 📸). Ссылка личная.",
       res_accept: "Спасибо! Сообщение принято и передано инспектору.",
       res_review: "Спасибо! Инспектор проверит фото.",
-      res_reject: "Спасибо! К сожалению, фото не похоже на опасный тротуар.",
+      res_reject: "На этом фото не видно проблемы на тротуаре (снег, лёд, сосульки, перекрытый проход), поэтому заявка не создана. Сфотографируйте тротуар поближе.", again: "📸 Снять ещё раз",
       res_ticket: "Заявка", err_send: "Не удалось отправить. Попробуйте снова.",
       err_area: "Это место за пределами Риги.", err_many: "Слишком много сообщений. Попробуйте позже.",
       err_pass: "Ссылка устарела. Отправьте боту /start и откройте форму заново.",
@@ -252,18 +252,37 @@
   sendBtn.addEventListener("click", send);
 
   function done(body) {
-    sent = true;
-    result = body;
+    const rel = body.relevant;
+    const rejected = rel === "reject" || !body.ticket;
+    sent = !rejected;
     if (stream) stream.getTracks().forEach((tr) => tr.stop());
+    stream = null;
     $("shoot").hidden = true;
     $("done").hidden = false;
-    const rel = body.relevant;
-    $("res-icon").textContent = rel === "reject" ? "🤷" : rel === "review" ? "🔎" : "✅";
-    $("res-text").textContent = t(rel === "reject" ? "res_reject" : rel === "review" ? "res_review" : "res_accept");
-    $("res-ticket").textContent = `${t("res_ticket")}: ${body.ticket}`;
-    if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred(rel === "reject" ? "warning" : "success");
+    $("res-icon").textContent = rejected ? "🤷" : rel === "review" ? "🔎" : "✅";
+    $("res-text").textContent = t(rejected ? "res_reject" : rel === "review" ? "res_review" : "res_accept");
+    $("res-ticket").textContent = rejected ? "" : `${t("res_ticket")}: ${body.ticket}`;
+    $("again").hidden = !rejected;
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred(rejected ? "warning" : "success");
+    if (rejected) return;  // no ticket was created: stay open so they can take a better photo
+    result = body;
     setTimeout(finish, 2500);  // hand the ticket to the bot (it follows the status and closes this window)
   }
+
+  $("again").addEventListener("click", () => {
+    shot = null;
+    $("done").hidden = true;
+    $("shoot").hidden = false;
+    preview.hidden = true;
+    afterShot.hidden = true;
+    video.hidden = false;
+    sendBtn.disabled = false;
+    sendBtn.textContent = t("send");
+    camMsg.textContent = t("cam_starting");
+    camMsg.hidden = false;
+    startCamera();
+    getLocation(true);
+  });
 
   let finished = false;
   function finish() {

@@ -144,3 +144,53 @@ def test_bot_offers_the_app_and_follows_its_ticket(make_client, tmp_path):
     bot.handle_update(fake.msg(chat, web_app_data={"data": json.dumps({"ticket": "NOPE2345"})}))  # unknown
     bot.handle_update(fake.msg(chat, web_app_data={"data": "not json"}))
     assert len(bot.state.chat(chat)["tickets"]) == 1
+
+
+def test_rejected_photo_gets_no_ticket(make_client):
+    client, engine, verdicts = setup(make_client)
+    verdicts["camera.jpg"] = "reject"
+    body = app_report(client, tgapp.make_pass("dev-r")).json()
+    assert body["relevant"] == "reject" and body["ticket"] is None and body["alert_id"] is None
+    row = engine.db.one("SELECT ticket FROM reports WHERE id = ?", (body["report_id"],))
+    assert client.get(f"/reports/ticket/{row['ticket']}").status_code == 404   # internal ref only
+    verdicts["web.jpg"] = "reject"
+    web = client.post("/reports", data={"lat": 56.96, "lon": 24.13},
+                      files={"photo": ("web.jpg", photo(77), "image/jpeg")}).json()
+    assert web["ticket"] is None                                                # the web form too
+
+
+def test_bot_buttons_menu_and_description(make_client, tmp_path):
+    client, _, _ = setup(make_client)
+    bot, fake = make_app_bot(client, tmp_path)
+    chat = 5151
+    bot.handle_update(fake.msg(chat, text="hello"))          # first contact without /start
+    texts = fake.texts(chat)
+    assert "Lantern" in texts[-2] and "📸" in texts[-1]       # welcome, then how to start
+    rows = last_markup(fake)["keyboard"]
+    assert "web_app" in rows[0][0] and [b["text"] for b in rows[1]] == ["📋 Mani pieteikumi", "🌐 Valoda", "❓ Palīdzība"]
+    bot.handle_update(fake.msg(chat, text="📋 Mani pieteikumi"))  # the button works like /status
+    assert "Tev vēl nav pieteikumu" in fake.texts(chat)[-1]
+    bot.handle_update(fake.msg(chat, text="❓ Palīdzība"))
+    assert "Kā ziņot" in fake.texts(chat)[-1]
+    bot.handle_update(fake.msg(chat, text="🌐 Valoda"))
+    assert "Choose a language" in fake.texts(chat)[-1]
+
+    fake.sent.clear()
+    bot.setup_profile()
+    sent = [(m, p.get("language_code")) for m, p in fake.sent]
+    for method in ("setMyCommands", "setMyDescription", "setMyShortDescription"):
+        assert {code for m, code in sent if m == method} == {None, "lv", "en", "ru"}
+    en = next(p for m, p in fake.sent if m == "setMyCommands" and p.get("language_code") == "en")
+    assert [c["command"] for c in en["commands"]] == ["start", "status", "lang", "help"]
+
+
+def test_chat_mode_has_the_buttons_too(make_client, tmp_path):
+    client, _, _ = setup(make_client)
+    fake = FakeTelegram()
+    tg = Telegram("TOKEN", "http://tg.test", client=httpx.Client(transport=httpx.MockTransport(fake.handler)))
+    bot = LanternBot(tg, client, State(tmp_path / "s.json"))      # no WEBAPP_URL: photos in the chat
+    bot.handle_update(fake.msg(77, text="/start"))
+    bot.handle_update(fake.cb(77, "lang:en"))
+    rows = last_markup(fake)["keyboard"]
+    assert len(rows) == 1 and rows[0][0]["text"] == "📋 My reports"
+    assert "Send one photo" in fake.texts(77)[-1]

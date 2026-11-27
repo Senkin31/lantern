@@ -104,24 +104,31 @@ def test_safe_redirect_after_login():
     assert auth.safe_next("/contractor?contractor=A") == "/contractor?contractor=A"
 
 
-# ---------------------------------------------------------------- bot password
-def test_bot_login_with_team_password(make_client, tmp_path):
-    client, _, _ = setup(make_client)
+# ---------------------------------------------------------------- bot login
+def login_bot(client, tmp_path, allowed=()):
     fake = FakeTelegram()
     tg = Telegram("TOKEN", "http://tg.test", client=httpx.Client(transport=httpx.MockTransport(fake.handler)))
-    bot = LanternBot(tg, client, State(tmp_path / "s.json"), "https://lantern.example", set(), PW)
+    return LanternBot(tg, client, State(tmp_path / "s.json"), "https://lantern.example", set(allowed), PW, "DNH"), fake
+
+
+def test_bot_asks_login_then_password(make_client, tmp_path):
+    client, _, _ = setup(make_client)
+    bot, fake = login_bot(client, tmp_path)
     friend = 3003
 
     bot.handle_update(fake.msg(friend, text="/start"))
-    assert "/login" in fake.texts(friend)[-1]                            # told how to get in
-    bot.handle_update(fake.msg(friend, text="/login wrong"))
-    assert "Wrong password" in fake.texts(friend)[-1]
-    assert "deleteMessage" in [m for m, p in fake.sent]                  # the attempt is not left in the chat
-    assert str(friend) not in bot.state.data["chats"]
+    assert "Enter your login" in fake.texts(friend)[-1]
+    assert [p for m, p in fake.sent if m == "sendMessage"][-1]["reply_markup"] == {"remove_keyboard": True}
+    bot.handle_update(fake.msg(friend, text="dnh"))                      # login is not case-sensitive
+    assert "Enter your password" in fake.texts(friend)[-1]
+    bot.handle_update(fake.msg(friend, text="wrong"))
+    assert "Wrong login or password" in fake.texts(friend)[-1] and "Enter your login" in fake.texts(friend)[-1]
+    assert [m for m, p in fake.sent].count("deleteMessage") == 2         # login and password are not left in the chat
+    assert str(friend) not in bot.state.data["chats"]                    # nothing stored before a login
 
-    bot.handle_update(fake.msg(friend, text=f"/login {PW}"))
-    assert any("Logged in" in x for x in fake.texts(friend))
-    assert friend in bot.state.data["allowed_users"]
+    bot.handle_update(fake.msg(friend, text="DNH"))
+    bot.handle_update(fake.msg(friend, text=PW))
+    assert any("logged in" in x for x in fake.texts(friend))
     assert json.loads((tmp_path / "s.json").read_text(encoding="utf-8"))["allowed_users"] == [friend]
     bot.handle_update(fake.cb(friend, "lang:en"))
     assert "web_app" in json.dumps([p.get("reply_markup") for m, p in fake.sent if m == "sendMessage"][-1])
@@ -129,16 +136,37 @@ def test_bot_login_with_team_password(make_client, tmp_path):
     bot.handle_update(fake.msg(friend, text="/logout"))
     assert friend not in bot.state.data["allowed_users"]
     bot.handle_update(fake.msg(friend, text="hello"))
-    assert "/login" in fake.texts(friend)[-1]                            # out again
+    assert "Enter your login" in fake.texts(friend)[-1]                  # has to log in again
+
+
+def test_bot_login_speaks_their_language_and_wrong_user_fails(make_client, tmp_path):
+    client, _, _ = setup(make_client)
+    bot, fake = login_bot(client, tmp_path)
+    upd = fake.msg(5005, text="/start")
+    upd["message"]["from"]["language_code"] = "lv"
+    bot.handle_update(upd)
+    assert "Ieraksti lietotājvārdu" in fake.texts(5005)[-1]
+    bot.handle_update(fake.msg(5005, text="someone"))
+    bot.handle_update(fake.msg(5005, text=PW))                           # right password, wrong login
+    assert 5005 not in (bot.state.data.get("allowed_users") or [])
 
 
 def test_bot_login_tries_are_limited(make_client, tmp_path):
     client, _, _ = setup(make_client)
-    fake = FakeTelegram()
-    tg = Telegram("TOKEN", "http://tg.test", client=httpx.Client(transport=httpx.MockTransport(fake.handler)))
-    bot = LanternBot(tg, client, State(tmp_path / "s.json"), "", set(), PW)
+    bot, fake = login_bot(client, tmp_path)
+    bot.handle_update(fake.msg(4004, text="/start"))
     for _ in range(5):
-        bot.handle_update(fake.msg(4004, text="/login guess"))
-    bot.handle_update(fake.msg(4004, text=f"/login {PW}"))
+        bot.handle_update(fake.msg(4004, text="DNH"))
+        bot.handle_update(fake.msg(4004, text="guess"))
+    bot.handle_update(fake.msg(4004, text="DNH"))
+    bot.handle_update(fake.msg(4004, text=PW))
     assert "Too many tries" in fake.texts(4004)[-1]
     assert 4004 not in (bot.state.data.get("allowed_users") or [])
+
+
+def test_mini_app_pass_dies_with_a_new_password(monkeypatch):
+    from app import tgapp
+    p = tgapp.make_pass("dev-1")
+    assert tgapp.check_pass(p) == "dev-1"
+    monkeypatch.setenv("LANTERN_PASSWORD", "changed")
+    assert tgapp.check_pass(p) is None

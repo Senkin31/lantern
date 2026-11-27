@@ -19,7 +19,7 @@ from typing import Optional
 
 from .config import env
 
-PASS_HOURS = 72  # the button stays in the chat; a fresh pass comes with every bot reply
+PASS_HOURS = 12  # the button stays in the chat; a fresh pass comes with every bot reply
 PROXY_HEADERS = ("cf-connecting-ip", "cf-ray", "x-forwarded-for", "x-forwarded-host", "forwarded", "x-real-ip")
 PUBLIC_PATHS = {"/tg", "/health", "/reports/app"}
 PUBLIC_PREFIXES = ("/assets/",)
@@ -29,7 +29,8 @@ def _key() -> Optional[bytes]:
     token = env("TELEGRAM_BOT_TOKEN", "")
     if not token:
         return None
-    return hmac.new(b"lantern-miniapp-pass", token.encode(), hashlib.sha256).digest()
+    team = env("BOT_PASSWORD", "") or env("LANTERN_PASSWORD", "")  # new password -> all old passes die
+    return hmac.new(b"lantern-miniapp-pass", (token + "|" + team).encode(), hashlib.sha256).digest()
 
 
 def _sign(key: bytes, body: str) -> str:

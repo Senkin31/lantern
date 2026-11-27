@@ -17,12 +17,12 @@ that opens /tg inside Telegram. That page takes the photo with the live camera a
 phone's own position; the button URL carries a signed pass for this person (app/tgapp.py).
 When the page is done it hands the ticket back (web_app_data) and the bot follows it as usual.
 
-Private mode (TELEGRAM_ALLOWED_USERS = comma-separated Telegram user ids, and/or a team password
-BOT_PASSWORD, which defaults to the web app's LANTERN_PASSWORD): the bot answers only allowed
-people. Anyone else gets one line saying the bot is private: no buttons, no Mini App pass, nothing
-stored about them. With a password they can send "/login <password>" once: the bot deletes that
-message, and on success remembers their Telegram id in data/bot_state.json ("/logout" undoes it).
-5 wrong tries in an hour -> wait. The command menu is shown only in the allowed chats.
+Private mode (a team login: BOT_USER / BOT_PASSWORD, by default the web app's LANTERN_USER /
+LANTERN_PASSWORD; optionally TELEGRAM_ALLOWED_USERS = ids that skip the login): everybody has to
+log in. After /start the bot asks for the login, then the password, and deletes both answers from
+the chat. On success it remembers the Telegram id in data/bot_state.json; "/logout" undoes it.
+5 wrong tries in an hour -> wait. People not logged in get no buttons, no Mini App pass and no
+command menu, and nothing about them is stored.
 """
 import hashlib
 import hmac
@@ -163,15 +163,17 @@ class State:
 
 class LanternBot:
     def __init__(self, telegram: Telegram, api: httpx.Client, state: State, webapp_url: str = "",
-                 allowed: Optional[set] = None, password: str = ""):
+                 allowed: Optional[set] = None, password: str = "", login_user: str = "lantern"):
         self.tg = telegram
         self.api = api
         self.state = state
         self.webapp_url = (webapp_url or "").rstrip("/")
         self.allowed = set(allowed or ())  # Telegram user ids from .env
-        self.password = password or ""     # team password for /login
+        self.password = password or ""     # team login + password, asked after /start
+        self.login_user = login_user or "lantern"
         self.private = bool(self.allowed or self.password)
         self.login_fails: dict = {}        # user id -> recent wrong tries (memory only)
+        self.login_steps: dict = {}        # user id -> where they are in the login (memory only)
         self.drafts: dict = {}  # chat_id -> in-progress report (in memory only)
         self.last_status_check = 0.0
 
@@ -243,38 +245,65 @@ class LanternBot:
     def let_in(self, user_id) -> bool:
         return not self.private or user_id in self.allowed or user_id in self.logged_in()
 
-    def try_login(self, msg: dict) -> None:
-        """/login <password> from someone not yet allowed. The message is deleted either way."""
-        chat_id, user_id = msg["chat"]["id"], (msg.get("from") or {}).get("id")
-        try:
-            self.tg.call("deleteMessage", chat_id=chat_id, message_id=msg.get("message_id"))
+    @staticmethod
+    def _their_lang(msg: dict) -> str:
+        code = ((msg.get("from") or {}).get("language_code") or "")[:2].lower()
+        return code if code in LANGS else "en"
+
+    def _delete(self, msg: dict) -> None:
+        try:  # never leave a login or password in the chat
+            self.tg.call("deleteMessage", chat_id=msg["chat"]["id"], message_id=msg.get("message_id"))
         except (TelegramError, httpx.HTTPError):
             pass
+
+    def login_flow(self, msg: dict) -> None:
+        """Someone not logged in: /start (or anything) -> "Enter login" -> "Enter password" -> in.
+        Both answers are deleted from the chat. Nothing is stored until the login succeeds."""
+        chat_id, user_id = msg["chat"]["id"], (msg.get("from") or {}).get("id")
+        L = self._their_lang(msg)
+        text = (msg.get("text") or "").strip()
+        cmd = text.split(" ")[0].split("@")[0].lower() if text.startswith("/") else ""
+        step = self.login_steps.get(user_id)
+        if cmd in ("/start", "/login") or step is None or not text:
+            self.login_steps[user_id] = {"step": "user"}
+            self.send(chat_id, t("login_intro", L) + "\n\n" + t("ask_login", L), {"remove_keyboard": True})
+            return
+        self._delete(msg)
+        if step["step"] == "user":
+            self.login_steps[user_id] = {"step": "pass", "user": text}
+            self.send(chat_id, t("ask_password", L))
+            return
+        self.login_steps.pop(user_id, None)
         now = time.time()
         fails = [x for x in self.login_fails.get(user_id, []) if x > now - 3600]
         self.login_fails[user_id] = fails
         if len(fails) >= 5:
-            self.send(chat_id, t("login_wait", "en"))
+            self.send(chat_id, t("login_wait", L))
             return
-        given = (msg.get("text") or "").strip()[len("/login"):].strip()
-        if not self.password or not hmac.compare_digest(given.encode(), self.password.encode()):
+        ok_user = hmac.compare_digest(step["user"].lower().encode(), self.login_user.lower().encode())
+        ok_pass = hmac.compare_digest(text.encode(), self.password.encode())
+        if not (ok_user and ok_pass):
             fails.append(now)
-            self.send(chat_id, t("login_bad", "en"))
-            log.info("wrong bot password")
+            self.login_steps[user_id] = {"step": "user"}
+            self.send(chat_id, t("login_bad", L) + "\n\n" + t("ask_login", L))
+            log.info("wrong bot login")
             return
-        users = self.logged_in() | {user_id}
-        self.state.data["allowed_users"] = sorted(users)
+        self.state.data["allowed_users"] = sorted(self.logged_in() | {user_id})
         self.state.save()
         self.login_fails.pop(user_id, None)
         self.set_menu(user_id)
-        log.info("a new Telegram account logged in to the bot")
-        self.send(chat_id, t("login_ok", "en"))
-        self.drafts[chat_id] = {"step": "lang"}
-        self.ask_lang(chat_id)
+        log.info("a Telegram account logged in to the bot")
+        self.send(chat_id, t("login_ok", L))
+        if self.state.chat(chat_id).get("lang"):
+            self.send(chat_id, t("welcome_app" if self.app_on() else "welcome", self.lang(chat_id)))
+            self.ask_photo(chat_id)
+        else:
+            self.drafts[chat_id] = {"step": "lang"}
+            self.ask_lang(chat_id)
 
     def turn_away(self, update: dict) -> bool:
-        """Private mode: True (and one short reply) for anyone not allowed. Nothing about them
-        is stored: no chat entry, no language, no pass."""
+        """Private mode: True for anyone not logged in. With a login set they are walked through it;
+        without one they are told the bot is private. No buttons, no Mini App pass for them."""
         if not self.private:
             return False
         if "callback_query" in update:
@@ -285,19 +314,18 @@ class LanternBot:
                 self.tg.call("answerCallbackQuery", callback_query_id=cb["id"], text=t("private", "en"))
             except (TelegramError, httpx.HTTPError):
                 pass
-            log.info("ignored a button press from someone not on the allowlist")
+            log.info("ignored a button press from someone not logged in")
             return True
         msg = update.get("message") or {}
         if not msg or self.let_in((msg.get("from") or {}).get("id")):
             return False
         if (msg.get("chat") or {}).get("type", "private") != "private":
             return True
-        text = (msg.get("text") or "").strip()
-        if self.password and text.split(" ")[0].split("@")[0].lower() == "/login":
-            self.try_login(msg)
-            return True
-        self.send(msg["chat"]["id"], t("private_login" if self.password else "private", "en"), {"remove_keyboard": True})
-        log.info("ignored a message from someone not allowed")
+        if self.password:
+            self.login_flow(msg)
+        else:
+            self.send(msg["chat"]["id"], t("private", "en"), {"remove_keyboard": True})
+            log.info("ignored a message from someone not allowed")
         return True
 
     def handle_update(self, update: dict) -> None:
@@ -337,11 +365,6 @@ class LanternBot:
             elif cmd == "/status":
                 self.show_status(chat_id)
             elif cmd == "/login":
-                if self.private:
-                    try:  # never leave a password in the chat
-                        self.tg.call("deleteMessage", chat_id=chat_id, message_id=msg.get("message_id"))
-                    except (TelegramError, httpx.HTTPError):
-                        pass
                 self.send(chat_id, t("login_already", self.lang(chat_id)), self.main_markup(chat_id))
             elif cmd == "/logout" and self.private:
                 self.state.data["allowed_users"] = sorted(self.logged_in() - {user_id})
@@ -695,10 +718,11 @@ def main() -> None:
     log.info("mini app: %s", "on" if webapp else "off (photos from the chat)")
     allowed = {int(x) for x in env("TELEGRAM_ALLOWED_USERS", "").replace(" ", "").split(",") if x.lstrip("-").isdigit()}
     password = env("BOT_PASSWORD", "") or env("LANTERN_PASSWORD", "")
-    bot = LanternBot(tg, api, state, webapp, allowed, password)
+    login_user = env("BOT_USER", "") or env("LANTERN_USER", "lantern")
+    bot = LanternBot(tg, api, state, webapp, allowed, password, login_user)
     log.info("access: %s", "public (anyone)" if not bot.private else
-             f"private: {len(allowed)} account(s) from .env, {len(bot.logged_in())} logged in"
-             + (", others can /login with the team password" if password else ""))
+             f"private: {len(bot.logged_in())} logged in, {len(allowed)} skip the login"
+             + (", everyone else is asked for the login and password" if password else ""))
     bot.setup_profile()
     bot.run_forever()
 

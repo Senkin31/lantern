@@ -69,7 +69,7 @@ Without a Nebius key, leave out `--vlm-all`. Without internet, leave out `--ice`
 
 **4. Demo day replay**
 
-Unzip the mock archive into the repo root so that `mock/` exists, then `python -m app.demo --auto-done`. The walkthrough is in [docs/demo.md](docs/demo.md).
+Unzip the mock archive into the repo root so that `mock/` exists, then `python -m app.demo --auto-done`. The archive is not in this repository because it holds camera frames; the app runs without it, and the demo video shows the full day. The walkthrough is in [docs/demo.md](docs/demo.md).
 
 ## AI and results
 

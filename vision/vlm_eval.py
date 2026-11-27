@@ -1,6 +1,6 @@
 """How good is the VLM second opinion? Runs the small model and the VLM on your labelled frames and prints tables.
 Needs NEBIUS_API_KEY in .env. About 1 request per labelled frame (89 for labels v2), a few minutes.
-  py vlm_eval.py --labels C:/Users/nikit/Downloads/fintraffic_labels_v2.csv --frames C:/Users/nikit/Downloads/data/fintraffic
+  py vlm_eval.py --labels <labels.csv> --frames <frames folder>
 Options: --only-flagged  ask the VLM only where the small model flagged the zone (as camera_worker --vlm does)."""
 import argparse, collections, csv, json, os
 try:

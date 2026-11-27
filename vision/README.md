@@ -1,69 +1,69 @@
-# Lantern — модельный сервис (порт 8001)
+# Lantern — vision service (port 8001)
 
-Определяет, есть ли снег в зоне тротуара на кадре камеры, и отправляет сигналы в приложение Даника (`POST /signals`).
-Torch не нужен: только onnxruntime + numpy + pillow, поэтому работает и на x86, и на Windows ARM.
+Decides whether the sidewalk zone on a camera frame is cleared, and sends signals to the Lantern app (`POST /signals`).
+No torch needed: only onnxruntime + numpy + pillow, so it runs on x86 and on Windows ARM, on a CPU.
 
-## Установка
+## Install
 ```
-cd lantern_model
+cd vision
 py -m pip install -r requirements.txt
-copy .env.example .env      (вписать NEBIUS_API_KEY; .env не коммитить)
+copy .env.example .env      (put NEBIUS_API_KEY here; never commit .env)
 ```
 
-## Запуск
-1. Сервис (принимает /analyze для фото жителей, раздаёт кадры и кропы):
+## Run
+1. The service (takes `/analyze` for residents' photos, serves frames and crops):
    `py -m uvicorn service:app --host 0.0.0.0 --port 8001`
-2. Камеры — один из режимов:
-   - повтор сохранённых кадров (для демо):
-     `py camera_worker.py --replay C:\Users\nikit\Downloads\data\fintraffic --since 2026-11-24T06:00 --speed 2`
-   - живые камеры Fintraffic раз в 10 минут: `py camera_worker.py --live --every 10`
-   - `--dry-run` — ничего не отправлять, только печатать.
-   Приложение Даника должно слушать `APP_URL` (по умолчанию http://localhost:8000).
-3. Вторая проверка VLM (нужен `NEBIUS_API_KEY` в `.env`, модель `VLM_MODEL=moonshotai/Kimi-K3`): `--vlm-all` — VLM смотрит каждый дневной кадр (рекомендуем; ≈ 200 запросов в день на 4 камеры, 2–4 с на запрос), `--vlm` — только зоны, которые отметила маленькая модель.
-   Выбор VLM (25.11): Kimi-K3 — без ложных тревог на убранных кадрах; Gemma-3-27B говорит «убрано» почти на всё; Qwen2.5-VL у Nebius больше нет.
-   Как сводятся ответы (`fuse` в `vlm_check.py`): VLM «не убрано» → заявка возможна; «узкая полоса» → `partial`, уровень письма; VLM «убрано», а модель «не убрано» → только инспектору (`check`); нет ответа или уверенность < 0,5 → решает маленькая модель.
-   Проверить VLM на своей разметке: `py vlm_eval.py --labels C:\Users\nikit\Downloads\data\fintraffic_labels_v2_council.csv --frames C:\Users\nikit\Downloads\data\fintraffic` (результат в `vlm_eval_results.csv`).
-4. Риск гололёда (ответ думы 26.11: скользкие участки обязаны посыпать): `--ice` у `camera_worker.py`. По погоде Open-Meteo (бесплатно, без ключа, CC BY 4.0) для каждой камеры: ледяной дождь, оттепель и потом мороз, осадки и земля ≤ 0 °C, влажный мороз. Если зона убрана, но риск средний или высокий, уходит сигнал `possible_ice` (кадр — как доказательство), в том числе ночью, когда снег не оцениваем. Проверить погоду по камерам: `py ice_risk.py` (или `--at 2026-11-24T07:00`).
-5. Проверка на своей разметке:
-   `py evaluate_fintraffic.py --labels fintraffic_labels.csv --frames C:\Users\nikit\Downloads\data\fintraffic`
+2. Cameras, one of two modes:
+   - replay saved frames (for the demo):
+     `py camera_worker.py --replay <frames folder> --since 2026-11-24T06:00 --speed 2`
+   - live Fintraffic cameras every 10 minutes: `py camera_worker.py --live --every 10`
+   - `--dry-run`: send nothing, only print.
+   The Lantern app must listen on `APP_URL` (default http://localhost:8000).
+3. VLM second opinion (needs `NEBIUS_API_KEY` in `.env`, model `VLM_MODEL=moonshotai/Kimi-K3`): `--vlm-all` sends every daytime frame to the VLM (recommended; ≈ 200 requests a day for 4 cameras, 2–4 s each), `--vlm` only the zones the small model flagged.
+   Choice of VLM (25.11): Kimi-K3 gave no false alarms on cleared frames; Gemma-3-27B says "cleared" to almost everything; Qwen2.5-VL is no longer offered by Nebius.
+   How the answers are combined (`fuse` in `vlm_check.py`): VLM "not cleared" → a job is possible; "narrow track" → `partial`, notice level; VLM "cleared" but the model "not cleared" → inspector only (`check`); no answer or confidence < 0.5 → the small model decides.
+   Check the VLM against your own labels: `py vlm_eval.py --labels <labels.csv> --frames <frames folder>` (results in `vlm_eval_results.csv`).
+4. Ice risk (the council: slippery sections must be gritted): `--ice` on `camera_worker.py`. From Open-Meteo weather (free, no key, CC BY 4.0) for each camera: freezing rain, thaw then frost, precipitation on ground at ≤ 0 °C, humid frost. If the zone is cleared but the risk is medium or high, a `possible_ice` signal goes to the inspector (the frame as evidence), also at night when snow is not judged. Check the weather for every camera: `py ice_risk.py` (or `--at 2026-11-24T07:00`).
+5. Evaluate on your own labels:
+   `py evaluate_fintraffic.py --labels fintraffic_labels.csv --frames <frames folder>`
 
-## Сбор и разметка данных (26.11)
-- `harvest_fintraffic.py` — история за последние 24 часа со 100 камер Fintraffic севернее 61,5° (разные модели камер, разрешения, расстояния), только дневные кадры. Fintraffic хранит кадры сутки, поэтому запускать каждый день: `py harvest_fintraffic.py --out C:\Users\nikit\Downloads\data\fintraffic_hist`. Первый запуск: ≈ 3 800 кадров. `contact_sheet.html` — по кадру с камеры, чтобы выбрать камеры с тротуаром.
-- `config/zones_hist.json` — зоны на выбранных камерах (пока 2: Кийминки C1259102 и Оулу, Äimärautio C1264803).
-- `vlm_label.py` — Kimi-K3 размечает кадры по правилу думы, затем человек проверяет каждый кадр в `review_kimi.html` → `labels_checked.csv`.
+## Collecting and labelling data
+- `harvest_fintraffic.py`: the last 24 hours of frames from 100 Fintraffic cameras north of 61.5° (different camera models, resolutions, distances), daytime only. Fintraffic keeps frames for a day, so run it daily: `py harvest_fintraffic.py --out <folder>`. First run: ≈ 3,800 frames. `contact_sheet.html` shows one frame per camera, to pick cameras that see a sidewalk.
+- `config/zones_hist.json`: sidewalk zones on the chosen cameras (so far 2: Kiiminki C1259102 and Oulu, Äimärautio C1264803).
+- `vlm_label.py`: Kimi-K3 labels the frames by the council's rule, then a person checks every frame in `review_kimi.html` → `labels_checked.csv`.
 
-## Эндпоинты
+## Endpoints
 - `GET /health`
-- `POST /analyze` — multipart `photo`, `comment` → `{relevant: accept|review|reject, score, hint, note}`. Без ключа или при ошибке/таймауте (10 с) → `review`.
-- `POST /classify` — multipart `image`, `zones` (JSON `[{zone_id, points}]`, необязательно) → вердикт по каждой зоне.
-- `GET /media/crops/...`, `/media/frames/...` — кропы (для подрядчика) и полные кадры (только инспектору).
+- `POST /analyze`: multipart `photo`, `comment` → `{relevant: accept|review|reject, score, hint, note}`. Without a key, or on an error or a 10 s timeout → `review`.
+- `POST /classify`: multipart `image`, `zones` (JSON `[{zone_id, points}]`, optional) → a verdict for each zone.
+- `GET /media/crops/...`, `/media/frames/...`: crops (for the contractor) and full frames (inspector only).
 
-## Как работает модель (v3, правило думы)
-- Правило думы (RD-24-270-sn, ответ ментора 25.11): до асфальта чистить не обязаны; укатанный снег с расчищенной полосой ≥ 50% ширины и ≥ 1,5 м — **убрано**. Нетронутый снег, только следы ног — **не убрано**. Снег на газоне — не нарушение.
-- Зона из `config/cameras.json` вырезается целиком (letterbox), вне полигона — серое. Кадры в сумерках и ночью не оцениваются: по координатам камеры считается высота солнца, ниже −3° (конец гражданских сумерек; меняется флагом `--min-sun`) кадр пропускается. Дополнительно отсекаются тёмные кадры и кадры под жёлтыми фонарями.
-- Признаки: YOLO11n-cls (Ultralytics, AGPL-3.0) → `lantern_embed.onnx`. Главная голова `not_cleared` в `lantern_heads.json`: SkyFinder (полностью заснеженные дни = не убрано) + разметка Fintraffic v2 (вес 5).
-- Уровни (`decide` в `lantern_vision.py`): `not_cleared` (p ≥ 0,5 → `snow`, confidence ≥ 0,5, может уйти подрядчику) · `check` (0,3–0,5 → только инспектору) · `cleared`.
-- Воркер: среднее по 3 кадрам + гистерезис ±0,05; сигнал при смене уровня, `snow` повторяется каждые 30 минут.
-- Вырезки для подрядчика — люди размыты (`privacy.py`). Полный кадр для инспектора — без изменений.
-- Камеры демо: Каяани (зона — только дорожка), Ювяскюля (тротуар на мосту), Вааса (дорожка), Оулу (зона перехода с островком). Лахти выключена.
+## How the model works (v3, the council's rule)
+- The council's rule (RD-24-270-sn, as the mentor explained it on 25.11): sidewalks need not be cleared down to the asphalt; packed snow with a cleared track of ≥ 50% of the width and ≥ 1.5 m is **cleared**. Untouched snow with only footprints is **not cleared**. Snow on a grass verge is not a violation.
+- The zone from `config/cameras.json` is cut out whole (letterboxed); everything outside the polygon is grey. Dusk and night frames are not judged: the sun's elevation is computed from the camera's coordinates, and below −3° (end of civil twilight; flag `--min-sun`) the frame is skipped. Dark frames and frames under yellow street lights are also skipped.
+- Features: YOLO11n-cls (Ultralytics, AGPL-3.0) → `lantern_embed.onnx`. The main `not_cleared` head in `lantern_heads.json`: SkyFinder (fully snowed-in days = not cleared) + Fintraffic labels v2 (weight 5).
+- Levels (`decide` in `lantern_vision.py`): `not_cleared` (p ≥ 0.5 → `snow`, confidence ≥ 0.5, may go to the contractor) · `check` (0.3–0.5 → inspector only) · `cleared`.
+- Worker: average over 3 frames + hysteresis ±0.05; a signal when the level changes, `snow` repeated every 30 minutes.
+- Crops for the contractor have people blurred (`privacy.py`). The full frame for the inspector is unchanged.
+- Demo cameras: Kajaani (zone = the footpath only), Jyväskylä (sidewalk on a bridge), Vaasa (footpath), Oulu (a crossing zone with an island). Lahti is switched off.
 
-## Качество (честно, 26.11)
-Метрика: кадр «не убрано» найден, если хотя бы кто-то его отметил (модель — `check` или `not_cleared`, Kimi — «частично» или «не убрано»). Ложная заявка — убранный кадр получил уровень `not_cleared`.
+## Quality (honest, 26.11)
+Metric: a "not cleared" frame counts as found if at least one of the two flagged it (the model `check` or `not_cleared`, Kimi "partial" or "not cleared"). A wrong job = a cleared frame got the level `not_cleared`.
 
-| Проверка | убрано → ложная заявка | не убрано → найдено |
+| Test | cleared → wrong job | not cleared → found |
 |---|---|---|
-| Маленькая модель, демо-камеры, камера вне обучения (89 кадров, 4 камеры) | 5 из 71 | — (нарушений на этих камерах не было) |
-| Маленькая модель, новые камеры (ни разу не видела) | 0 из 36 (Оулу, Äimärautio) | 26 из 35 = 74% (Кийминки) |
-| Kimi-K3, новые камеры | 0 из 36 | 23 из 35 = 66% (в основном «частично») |
-| Модель + Kimi вместе | 0 из 36 | 33 из 35 = 94% |
-| Kimi-K3, 40 кадров SkyFinder | 0 из 24 | 8 из 8 на камере 10917 |
+| Small model, demo cameras, camera held out (89 frames, 4 cameras) | 5 of 71 | — (no violations on these cameras) |
+| Small model, new cameras (never seen) | 0 of 36 (Oulu, Äimärautio) | 26 of 35 = 74% (Kiiminki) |
+| Kimi-K3, new cameras | 0 of 36 | 23 of 35 = 66% (mostly "partial") |
+| Model + Kimi together | 0 of 36 | 33 of 35 = 94% |
+| Kimi-K3, 40 SkyFinder frames | 0 of 24 | 8 of 8 on camera 10917 |
 
-- Камера с реальными нарушениями пока одна (Кийминки), поэтому 94% — предварительная цифра.
-- Спорный случай — тонкий ровный слой свежего снега по всей ширине без расчищенной полосы. Строгая подсказка для Kimi ловит его в 97% случаев, но даёт 18 ложных «не убрано» из 71 на демо-камерах (мост в Ювяскюля, который ментор назвал убранным), поэтому в демо оставлена мягкая. Вопрос задан ментору.
-- Если добавить Кийминки в обучение маленькой модели, она начинает путать тонкий нетронутый снег с укатанной полосой на мосту в Ювяскюля — нужны ещё камеры с нарушениями (сборщик запускаем каждый день).
-- Фото жителей с уровня глаз (например, Mūkusalas promenāde) камерная модель не разбирает — для них `/analyze`.
+- So far only one camera had real violations (Kiiminki), so 94% is a preliminary number.
+- The hard case is a thin, even layer of fresh snow across the whole width with no cleared track. A strict prompt for Kimi catches it 97% of the time, but gives 18 wrong "not cleared" of 71 on the demo cameras (the bridge in Jyväskylä, which the mentor called cleared), so the demo keeps the soft prompt.
+- Adding Kiiminki to the small model's training makes it confuse thin untouched snow with the packed track on the Jyväskylä bridge; more cameras with violations are needed (the harvester runs every day).
+- Residents' photos taken at eye level are not for the camera model; they go through `/analyze`.
 
-## Данные и лицензии
-- SkyFinder (Mihail et al.) — только для обучения, кадры не публикуем.
-- Fintraffic / digitraffic.fi — CC BY 4.0, указывать источник.
-- YOLO11 (Ultralytics) — AGPL-3.0 (и классификатор, и детектор людей), поэтому весь репозиторий под AGPL-3.0.
+## Data and licences
+- SkyFinder (Mihail et al.): training only, frames are not published.
+- Fintraffic / digitraffic.fi: CC BY 4.0, credit the source.
+- YOLO11 (Ultralytics): AGPL-3.0 (both the classifier and the people detector), so the whole repository is AGPL-3.0.

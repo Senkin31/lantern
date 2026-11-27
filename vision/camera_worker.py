@@ -2,7 +2,7 @@
 
   live:    python camera_worker.py --config config/cameras.json --live --every 10
            (downloads the latest Fintraffic image of each camera every N minutes)
-  replay:  python camera_worker.py --config config/cameras.json --replay C:/Users/nikit/Downloads/data/fintraffic --speed 2
+  replay:  python camera_worker.py --config config/cameras.json --replay <frames folder> --speed 2
            (plays saved frames in time order; --speed = real seconds between frames)
 
 Sends a signal when a zone's verdict changes, and repeats 'snow' every --resend minutes of camera time.

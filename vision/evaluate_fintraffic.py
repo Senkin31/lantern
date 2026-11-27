@@ -1,5 +1,5 @@
 """Checks the model against your own labels from label_fintraffic.html.
-  python evaluate_fintraffic.py --labels fintraffic_labels.csv --frames C:/Users/nikit/Downloads/data/fintraffic
+  python evaluate_fintraffic.py --labels fintraffic_labels.csv --frames <frames folder>
 Prints, for each of your labels (v2: cleared / partial / not_cleared), how often the model said cleared / check (inspector only) / not_cleared (goes to the contractor)."""
 import argparse, collections, csv, json, os
 from PIL import Image

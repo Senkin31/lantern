@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import secrets
 from pathlib import Path
+from urllib.parse import quote
 from typing import Literal, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
@@ -14,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import analyze as analyze_mod
+from . import auth
 from . import evidence as evidence_mod
 from . import tgapp
 from .config import settings
@@ -64,11 +66,30 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
     app.state.engine, app.state.views, app.state.db, app.state.guard = engine, views, db, guard
 
     @app.middleware("http")
-    async def public_gate(request: Request, call_next):
-        # through the public tunnel only the Telegram Mini App is reachable (see app/tgapp.py)
-        if tgapp.proxied(request.headers) and not tgapp.public_path(request.url.path):
-            return PlainTextResponse("Not Found", status_code=404)
-        return await call_next(request)
+    async def gate(request: Request, call_next):
+        """Who may reach what (see app/auth.py and app/tgapp.py):
+        - the Mini App page, its assets and pass-checked upload, /health and the login page: anyone;
+        - logged in (session cookie): everything, also through the public link;
+        - no LANTERN_PASSWORD set: as before (local: everything, public link: Mini App only);
+        - otherwise pages go to the login page, and the API answers 401 unless the caller is a
+          machine on this computer (bot, camera worker, demo script) or sends INTERNAL_API_KEY."""
+        path = request.url.path
+        proxied = tgapp.proxied(request.headers)
+        if tgapp.public_path(path) or path in auth.OPEN:
+            return await call_next(request)
+        if auth.valid_session(request.cookies.get(auth.COOKIE)):
+            return await call_next(request)
+        if not auth.enabled():
+            if proxied:
+                return PlainTextResponse("Not Found", status_code=404)
+            return await call_next(request)
+        if path in auth.PAGES or path.endswith("/evidence"):
+            target = path + ("?" + request.url.query if request.url.query else "")
+            return RedirectResponse("/login?next=" + quote(target, safe=""), status_code=303)
+        host = request.client.host if request.client else None
+        if guard.trusted(None if proxied else host, request.headers.get("x-lantern-key")):
+            return await call_next(request)
+        return JSONResponse({"detail": "login required"}, status_code=401)
 
     # ------------------------------------------------------------------ static
     app.mount("/assets", StaticFiles(directory=STATIC), name="assets")
@@ -99,6 +120,37 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
     def telegram_app_page():
         return page("tg.html")
 
+    # ------------------------------------------------------------------ login
+    @app.get("/login", include_in_schema=False)
+    def login_form(request: Request, next: Optional[str] = None):
+        if not auth.enabled() or auth.valid_session(request.cookies.get(auth.COOKIE)):
+            return RedirectResponse(auth.safe_next(next), status_code=303)
+        return HTMLResponse(auth.login_page(next or "/inspector"), headers={"Cache-Control": "no-store"})
+
+    @app.post("/login", include_in_schema=False)
+    def login_submit(request: Request, username: str = Form(""), password: str = Form(""),
+                     next: str = Form("/inspector")):
+        if not auth.enabled():
+            return RedirectResponse(auth.safe_next(next), status_code=303)
+        addr = tgapp.client_ip(request.headers, request.client.host if request.client else None) or "-"
+        if auth.too_many_fails(addr):
+            return HTMLResponse(auth.login_page(next, "Pārāk daudz mēģinājumu, pagaidi 15 min / "
+                                                      "Too many tries, wait 15 minutes"), status_code=429)
+        if not auth.check_login(username, password):
+            auth.failed(addr)
+            return HTMLResponse(auth.login_page(next, "Nepareizs lietotājs vai parole / Wrong username or password"),
+                                status_code=401)
+        resp = RedirectResponse(auth.safe_next(next), status_code=303)
+        resp.set_cookie(auth.COOKIE, auth.make_session(), max_age=auth.SESSION_HOURS * 3600, httponly=True,
+                        samesite="lax", secure=tgapp.proxied(request.headers))
+        return resp
+
+    @app.get("/logout", include_in_schema=False)
+    def logout():
+        resp = RedirectResponse("/login", status_code=303)
+        resp.delete_cookie(auth.COOKIE)
+        return resp
+
     # ------------------------------------------------------------------ meta
     @app.get("/health")
     def health():
@@ -115,6 +167,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
             "images_credit": settings.images_credit,
             "source_url": settings.source_url,
             "analyze_connected": bool(settings.analyze_url),
+            "login": auth.enabled(),
             "settings": engine.runtime_view(),
             "enums": {"passable": PASSABLE, "hazard": REPORT_HAZARDS, "place_type": PLACE_TYPES},
         }

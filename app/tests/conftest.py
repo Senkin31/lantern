@@ -12,6 +12,10 @@ os.environ["APP_DB"] = str(Path(_tmp) / "import.db")
 os.environ["UPLOAD_DIR"] = str(Path(_tmp) / "uploads")
 os.environ["ANALYZE_URL"] = ""
 os.environ["TRUSTED_HOSTS"] = "127.0.0.1,::1,testclient"
+# login and the private bot are switched on per test (the real .env may set them)
+os.environ["LANTERN_PASSWORD"] = ""
+os.environ["BOT_PASSWORD"] = ""
+os.environ["TELEGRAM_ALLOWED_USERS"] = ""
 
 MOCK = ROOT / "mock"
 

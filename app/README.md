@@ -119,6 +119,16 @@ Spam limits stop floods; these rules stop a single convincing fake. None of them
 
 API callers that send no `location_source` (demo script, replay) count as exact. Tests: `tests/test_trust.py`.
 
+### Login and the private bot (nobody else spends our AI credit)
+
+Every report is checked by the AI service on our paid API key. Nobody can read that key (it stays in the model service's `.env`), but strangers could *use* it by sending reports. So:
+
+- **Web app login:** with `LANTERN_PASSWORD` set (in `.env`, with `LANTERN_USER`, default `lantern`), the inspector, contractor and resident pages and the API docs open a login page first. The session lasts 12 h; **Log out** is in the header. Changing the password logs everybody out. 5 wrong passwords in 15 min from one address mean waiting.
+- **API:** needs the login too, except for programs on this computer (the bot, the camera worker, the demo script: `TRUSTED_HOSTS` without proxy headers) or callers with the `INTERNAL_API_KEY` header. Through the public link only the Mini App, `/health` and `/login` work without logging in.
+- **Private bot:** Telegram ids in `TELEGRAM_ALLOWED_USERS` are always in. Anyone else gets "This bot is private" and can send `/login <password>` once (same team password, or `BOT_PASSWORD`). The bot deletes that message, remembers the id in `data/bot_state.json`, and `/logout` undoes it. 5 wrong tries an hour. Strangers get no buttons, no Mini App pass and no command menu, and nothing about them is stored.
+
+Tests: `tests/test_login.py`.
+
 ### Telegram Mini App (photo taken now, the phone's own location)
 
 A photo sent in a chat can be old or from the gallery, and a place can be typed. With the Mini App the bot shows a **📸 Report a sidewalk** button instead. It opens `/tg` inside Telegram: the page takes the photo with the **live camera** (no gallery) and sends the phone's position (Telegram's `LocationManager`, else the browser's geolocation) with its accuracy.

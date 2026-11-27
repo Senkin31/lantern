@@ -114,12 +114,37 @@ T = {
         "en": "🔒 Šis bots ir privāts. / This bot is private. / Этот бот приватный.",
         "ru": "🔒 Šis bots ir privāts. / This bot is private. / Этот бот приватный.",
     },
+    "private_login": {
+        "lv": "🔒 Šis bots ir privāts. Komandas dalībnieki: /login parole\n"
+              "🔒 This bot is private. Team members: /login password\n"
+              "🔒 Этот бот приватный. Участники команды: /login пароль",
+        "en": "🔒 Šis bots ir privāts. Komandas dalībnieki: /login parole\n"
+              "🔒 This bot is private. Team members: /login password\n"
+              "🔒 Этот бот приватный. Участники команды: /login пароль",
+        "ru": "🔒 Šis bots ir privāts. Komandas dalībnieki: /login parole\n"
+              "🔒 This bot is private. Team members: /login password\n"
+              "🔒 Этот бот приватный. Участники команды: /login пароль",
+    },
+    "login_ok": {"lv": "✅ Ienākts / Logged in / Вход выполнен", "en": "✅ Ienākts / Logged in / Вход выполнен",
+                 "ru": "✅ Ienākts / Logged in / Вход выполнен"},
+    "login_bad": {"lv": "❌ Nepareiza parole / Wrong password / Неверный пароль",
+                  "en": "❌ Nepareiza parole / Wrong password / Неверный пароль",
+                  "ru": "❌ Nepareiza parole / Wrong password / Неверный пароль"},
+    "login_wait": {"lv": "⏳ Pārāk daudz mēģinājumu, pagaidi stundu / Too many tries, wait an hour / Слишком много попыток, подождите час",
+                   "en": "⏳ Pārāk daudz mēģinājumu, pagaidi stundu / Too many tries, wait an hour / Слишком много попыток, подождите час",
+                   "ru": "⏳ Pārāk daudz mēģinājumu, pagaidi stundu / Too many tries, wait an hour / Слишком много попыток, подождите час"},
+    "login_already": {"lv": "Tu jau esi iekšā ✅", "en": "You're already in ✅", "ru": "Вы уже вошли ✅"},
+    "logout_ok": {"lv": "👋 Izgājis / Logged out / Вы вышли", "en": "👋 Izgājis / Logged out / Вы вышли",
+                  "ru": "👋 Izgājis / Logged out / Вы вышли"},
     "bot_short_private": {"lv": "🔒 Privāts Lantern komandas testa bots.", "en": "🔒 Private test bot of the Lantern team.",
                           "ru": "🔒 Приватный тестовый бот команды Lantern."},
     "bot_about_private": {
-        "lv": "🔒 Šis ir privāts Lantern komandas testa bots. Tas atbild tikai komandas dalībniekiem.",
-        "en": "🔒 This is a private test bot of the Lantern team. It only answers team members.",
-        "ru": "🔒 Это приватный тестовый бот команды Lantern. Он отвечает только участникам команды.",
+        "lv": "🔒 Šis ir privāts Lantern komandas testa bots. Tas atbild tikai komandas dalībniekiem "
+              "(spied START, tad /login parole).",
+        "en": "🔒 This is a private test bot of the Lantern team. It only answers team members "
+              "(press START, then /login password).",
+        "ru": "🔒 Это приватный тестовый бот команды Lantern. Он отвечает только участникам команды "
+              "(нажмите START, затем /login пароль).",
     },
     "btn_status": {"lv": "📋 Mani pieteikumi", "en": "📋 My reports", "ru": "📋 Мои заявки"},
     "btn_lang": {"lv": "🌐 Valoda", "en": "🌐 Language", "ru": "🌐 Язык"},

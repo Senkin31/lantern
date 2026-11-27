@@ -82,6 +82,7 @@
       flag_approx_location: "📍 Place picked or typed, not GPS", flagTip_approx_location: "Alone it does not send the contractor: needs GPS, a camera or a second person",
       flag_not_street_photo: "🖥 Looks like a screenshot or webcam", flagTip_not_street_photo: "The AI's note says this is not a photo taken on the street",
       flag_false_alarm_sender: "⚠ Sender had false alarms", flagTip_false_alarm_sender: "Earlier reports from this sender were closed as false alarms",
+      logout: "Log out",
       flag_coarse_location: "📡 Rough phone location", flagTip_coarse_location: "The phone gave its position only to wifi or cell-tower accuracy (worse than GPS)",
       flag_picked_photo: "🗂 Photo from the file dialog", flagTip_picked_photo: "The in-app camera did not open, so the phone's file dialog was used: it could be an older photo. Waits for the inspector",
       capture_live: "📷 Taken live in the Telegram app", captureTip_live: "Photo taken in the app's own camera just now, at the phone's GPS position",
@@ -170,6 +171,7 @@
       flag_approx_location: "📍 Vieta izvēlēta vai ierakstīta, nav GPS", flagTip_approx_location: "Viena pati nenosūta darbuzņēmēju: vajag GPS, kameru vai otru cilvēku",
       flag_not_street_photo: "🖥 Izskatās pēc ekrānuzņēmuma vai tīmekļa kameras", flagTip_not_street_photo: "MI piezīme saka, ka foto nav uzņemts uz ielas",
       flag_false_alarm_sender: "⚠ Sūtītājam bijušas viltus trauksmes", flagTip_false_alarm_sender: "Iepriekšējie šī sūtītāja ziņojumi slēgti kā viltus trauksme",
+      logout: "Iziet",
       flag_coarse_location: "📡 Aptuvena tālruņa atrašanās vieta", flagTip_coarse_location: "Tālrunis noteica vietu tikai pēc wifi vai mobilā torņa (sliktāk nekā GPS)",
       flag_picked_photo: "🗂 Foto no failu izvēles", flagTip_picked_photo: "Lietotnes kamera neatvērās, tāpēc izmantota tālruņa failu izvēle: foto var būt vecāks. Gaida inspektoru",
       capture_live: "📷 Uzņemts tieši Telegram lietotnē", captureTip_live: "Foto uzņemts lietotnes kamerā tikko, tālruņa GPS vietā",
@@ -338,7 +340,8 @@
       <span class="lang" role="group" aria-label="Language">
         <button type="button" data-lang="en" aria-pressed="${lang === "en"}">EN</button>
         <button type="button" data-lang="lv" aria-pressed="${lang === "lv"}">LV</button>
-      </span>`;
+      </span>
+      ${meta.login ? `<a class="tb-link" href="/logout">${esc(t("logout"))}</a>` : ""}`;
     el.querySelector("#roleSel").addEventListener("change", (e) => {
       const v = e.target.value;
       location.href = v === "inspector" ? "/inspector" : "/contractor?contractor=" + encodeURIComponent(v.split(":")[1]);

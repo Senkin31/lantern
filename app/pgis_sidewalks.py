@@ -2,6 +2,7 @@
 
     python -m app.pgis_sidewalks                  # -> data/pgis_sidewalks.geojson (git-ignored)
     python -m app.pgis_sidewalks --out other.geojson
+    python -m app.pgis_sidewalks --names-only     # no download: re-name the sections of the existing file
 
 The city's winter maintenance system shows exactly which sidewalks are maintained (categories 1-3,
 season 24/25) and which are not: every maintained stretch is its own line object, one per side of
@@ -22,12 +23,18 @@ meets it (OSM junctions, committed in config/), where another maintained sidewal
 evenly where a stretch is still longer than MAX_SECTION_M. Each section is its own object, so an alert
 colours only its block. The cut is lossless: the sections together are exactly the pGIS line, with the
 same gaps. --no-cut keeps the objects whole.
-Uses only the standard library; the cutting downloads nothing.
+
+Names: the city's data names many lines only by their district ("Centrs", "Avoti") or not at all, and
+some names are misspelt. Each section is named after the street it runs alongside (name_sections), from
+OpenStreetMap's named streets (config/riga_streets.json, committed); the city's own name stays where no
+street runs alongside, unless it is only a district.
+Uses only the standard library; the cutting and the naming download nothing.
 """
 import argparse
 import json
 import math
 import re
+import unicodedata
 import urllib.request
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -55,6 +62,14 @@ CUT_MIN_M = 40.0       # nor this close to the cut before it (a wide junction's 
 MAX_SECTION_M = 200.0  # a stretch with no known crossing is still cut, evenly, into pieces at most this long
 CROSSINGS = ROOT / "config" / "riga_crossings.json"     # OSM street junctions + crosswalks, all of Riga
 OSM_BLOCKS = ROOT / "config" / "riga_sidewalks.geojson"  # OSM blocks of the centre: 3+ street ends = a junction
+STREET_NAMES = ROOT / "config" / "riga_streets.json"     # OSM named streets + paths, all of Riga
+
+# names (name_sections)
+NAME_NEAR_M = 35.0     # a street's centre line this close to the sidewalk...
+NAME_ALONG = 0.87      # ...and running alongside it (within 30 degrees) gives its name
+NAME_STEP_M = 5.0      # the sidewalk is sampled every few metres; the street alongside most of it wins
+NAME_SHARE = 0.25      # ...if it runs alongside at least this share of the section
+NAME_CORNER_M = 20.0   # a short piece with no street alongside (a corner) takes the nearest street this close
 _KY = 111320.0
 _KX = _KY * math.cos(math.radians(56.95))
 _G = 50.0  # grid cell, m
@@ -185,6 +200,109 @@ def load_streets() -> tuple:
                     ends[(round(e[0], 6), round(e[1], 6))] += 1
         pts += [list(p) for p, n in ends.items() if n >= 3]
     return pts, streets
+
+
+def load_street_names() -> list:
+    """[name, "road" | "path", [[lon, lat], ...]] from config/riga_streets.json, [] when it is not there."""
+    if not STREET_NAMES.is_file():
+        return []
+    return json.loads(STREET_NAMES.read_text(encoding="utf-8")).get("streets", [])
+
+
+def _norm_name(name: str) -> str:
+    """"Krišjāņa Valdemāra iela (Maršruts Nr:4)" and "Krisjana Valdemara iela" are the same street."""
+    s = re.sub(r"\(.*?\)|,.*$", "", name or "")
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]", "", s)
+
+
+def _is_district(name: str, districts: set) -> bool:
+    """"Centrs", "Avoti", "Āgenskalns": a district (layer) name, also without its number ("Āgenskalns 1")."""
+    return name in districts or any(d.split(" ")[0] == name for d in districts)
+
+
+def name_sections(feats: list, streets: list) -> Counter:
+    """Name each sidewalk section after the street it runs alongside. Every few metres along the section
+    the nearest street centre line within NAME_NEAR_M that runs alongside it (within 30 degrees) gets a
+    vote; streets win over named paths. The city's own street wins when it runs alongside at least
+    NAME_SHARE of the section (spelt as in OSM); else the street with the most votes, if it runs
+    alongside at least NAME_SHARE. A short corner piece takes the nearest street within NAME_CORNER_M.
+    Otherwise the city's own name stays, unless it is only a district (then the section has no name and
+    the map says "Sidewalk" with the district). The city's name is kept as pgis_name, so this can run
+    again on its own output. Returns how many sections were named from where."""
+    grid = defaultdict(list)
+    for name, cls, coords in streets:
+        xy = [_xy(c) for c in coords]
+        for (ax, ay), (bx, by) in zip(xy, xy[1:]):
+            L = math.hypot(bx - ax, by - ay)
+            if L < 0.1:
+                continue
+            seg = (name, cls == "path", ax, ay, bx, by, (bx - ax) / L, (by - ay) / L, L, _norm_name(name))
+            pad = NAME_NEAR_M
+            for gx in range(int((min(ax, bx) - pad) // _G), int((max(ax, bx) + pad) // _G) + 1):
+                for gy in range(int((min(ay, by) - pad) // _G), int((max(ay, by) + pad) // _G) + 1):
+                    grid[(gx, gy)].append(seg)
+
+    def nearest(px, py, ux=None, uy=None, prefer=None):
+        """(is_path, distance, name) of the closest street segment within NAME_NEAR_M, optionally only
+        those running alongside; and the name of a segment called `prefer` (normalised) within reach."""
+        best, mine = None, None
+        for name, is_path, ax, ay, bx, by, sx, sy, L, norm in grid.get((int(px // _G), int(py // _G)), ()):
+            if ux is not None and abs(ux * sx + uy * sy) < NAME_ALONG:
+                continue
+            k = max(0.0, min(L, (px - ax) * sx + (py - ay) * sy))
+            d = math.hypot(px - (ax + sx * k), py - (ay + sy * k))
+            if d > NAME_NEAR_M:
+                continue
+            if best is None or (is_path, d) < best[:2]:
+                best = (is_path, d, name)
+            if prefer and norm == prefer:
+                mine = name
+        return best, mine
+
+    districts = {f["properties"].get("district") for f in feats if f["properties"].get("district")}
+    stats = Counter()
+    for f in feats:
+        p = f["properties"]
+        if p.get("kind") != "sidewalk" or f["geometry"]["type"] != "LineString":
+            continue
+        city = p["pgis_name"] if "pgis_name" in p else p.get("name")
+        xy = [_xy(c) for c in f["geometry"]["coordinates"]]
+        prefer = _norm_name(city) if city else None
+        votes, mine_votes, total = Counter(), Counter(), 0.0
+        for (ax, ay), (bx, by) in zip(xy, xy[1:]):
+            L = math.hypot(bx - ax, by - ay)
+            if L < 0.1:
+                continue
+            n = max(1, round(L / NAME_STEP_M))
+            for i in range(n):
+                k = (i + 0.5) / n
+                hit, mine = nearest(ax + (bx - ax) * k, ay + (by - ay) * k, (bx - ax) / L, (by - ay) / L, prefer)
+                if hit:
+                    votes[(hit[0], hit[2])] += L / n
+                if mine:
+                    mine_votes[mine] += L / n
+            total += L
+        osm = None
+        if mine_votes and max(mine_votes.values()) >= NAME_SHARE * total:
+            osm = max(mine_votes, key=mine_votes.get)  # the city's own street runs alongside: spelt as in OSM
+        for want_path in (False, True):  # else a street alongside beats a named path alongside
+            got = [(v, nm) for (is_path, nm), v in votes.items() if is_path == want_path]
+            if osm is None and got and max(got)[0] >= NAME_SHARE * total:
+                osm = max(got)[1]
+        if osm is None and total <= 2 * NAME_CORNER_M:  # a corner piece: the nearest street, any direction
+            mx, my = xy[len(xy) // 2] if len(xy) > 2 else ((xy[0][0] + xy[-1][0]) / 2, (xy[0][1] + xy[-1][1]) / 2)
+            hit, _ = nearest(mx, my)
+            osm = hit[2] if hit and hit[1] <= NAME_CORNER_M else None
+        if osm:
+            name, src = osm, "osm"
+        elif city and not _is_district(city, districts):
+            name, src = city, "pgis"
+        else:
+            name, src = None, "none"
+        p["name"], p["name_src"], p["pgis_name"] = name, src, city
+        stats[src] += 1
+    return stats
 
 
 def _unit(dx: float, dy: float) -> tuple:
@@ -342,7 +460,21 @@ def main() -> None:
     ap.add_argument("--out", default="data/pgis_sidewalks.geojson")
     ap.add_argument("--no-cut", action="store_true", help="keep each pGIS object whole (no sections)")
     ap.add_argument("--max-section", type=float, default=MAX_SECTION_M, help="longest section with no crossing, m")
+    ap.add_argument("--names-only", action="store_true",
+                    help="no download: name the sections of the existing --out file after their streets")
     a = ap.parse_args()
+    out = Path(a.out) if Path(a.out).is_absolute() else ROOT / a.out
+    streets = load_street_names()
+    if not streets:
+        print(f"{STREET_NAMES.name} is missing: sections keep the city's names "
+              "(make it with: python -m app.osm_sidewalks --streets)")
+    if a.names_only:
+        fc = json.loads(out.read_text(encoding="utf-8"))
+        stats = name_sections(fc["features"], streets)
+        out.write_text(json.dumps(fc, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        print(f"named after the street alongside: {stats['osm']}, the city's own name: {stats['pgis']}, "
+              f"no name: {stats['none']} -> {out}")
+        return
     body = {**CITY, "classifiers": CLASSIFIERS, "geometriesLoaded": [], "objectFilter": None, "zoom": 11}
     lines, polygons = post("geoms/lines", body), post("geoms/polygons", body)
     try:
@@ -360,7 +492,8 @@ def main() -> None:
         print(f"{pieces} pGIS line pieces cut at crossings ({len(junctions)} OSM junctions and crosswalks, {len(streets)} OSM street "
               f"blocks, the sidewalks themselves) -> {len(lens)} sections "
               f"(median {lens[len(lens) // 2]:.0f} m, longest {lens[-1]:.0f} m)")
-    out = Path(a.out) if Path(a.out).is_absolute() else ROOT / a.out
+    stats = name_sections(feats, streets)
+    print(f"names: after the street alongside {stats['osm']}, the city's own {stats['pgis']}, none {stats['none']}")
     out.parent.mkdir(parents=True, exist_ok=True)
     fc = {"type": "FeatureCollection", "source": "pgis", "attribution": ATTRIBUTION, "features": feats}
     out.write_text(json.dumps(fc, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

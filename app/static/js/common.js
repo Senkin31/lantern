@@ -96,7 +96,7 @@
       flag_coarse_location: "Rough phone location", flagTip_coarse_location: "The phone gave its position only to wifi or cell-tower accuracy (worse than GPS)",
       flag_picked_photo: "Photo from the file dialog", flagTip_picked_photo: "The in-app camera did not open, so the phone's file dialog was used: it could be an older photo. Waits for the inspector",
       capture_live: "Taken live in the Telegram app", captureTip_live: "Photo taken in the app's own camera just now, at the phone's GPS position",
-      sectionLegend: "Street section or square (camera or 2+ residents)", sectionNoName: "Unnamed street", squareL: "square",
+      sectionLegend: "Street section or square (camera or 2+ residents)", sectionNoName: "Sidewalk", squareL: "square",
       bubbleLegend: "Several alerts close together", bubbleTip: "{n} alerts here: click to zoom in",
       net_title: "Sidewalks (pGIS)", net_none: "No task", net_registered: "Registered: to be cleaned",
       net_started: "Started: to be checked", net_finished: "Finished",
@@ -198,7 +198,7 @@
       flag_coarse_location: "Aptuvena tālruņa atrašanās vieta", flagTip_coarse_location: "Tālrunis noteica vietu tikai pēc wifi vai mobilā torņa (sliktāk nekā GPS)",
       flag_picked_photo: "Foto no failu izvēles", flagTip_picked_photo: "Lietotnes kamera neatvērās, tāpēc izmantota tālruņa failu izvēle: foto var būt vecāks. Gaida inspektoru",
       capture_live: "Uzņemts tieši Telegram lietotnē", captureTip_live: "Foto uzņemts lietotnes kamerā tikko, tālruņa GPS vietā",
-      sectionLegend: "Ielas posms vai laukums (kamera vai 2+ iedzīvotāji)", sectionNoName: "Iela bez nosaukuma", squareL: "laukums",
+      sectionLegend: "Ielas posms vai laukums (kamera vai 2+ iedzīvotāji)", sectionNoName: "Ietve", squareL: "laukums",
       bubbleLegend: "Vairāki gadījumi tuvu", bubbleTip: "Šeit {n} gadījumi: klikšķini, lai pietuvinātu",
       net_title: "Ietves (pGIS)", net_none: "Nav uzdevuma", net_registered: "Reģistrēts: jātīra",
       net_started: "Uzsākts: jāpārbauda", net_finished: "Pabeigts",
@@ -443,7 +443,8 @@
     const tip = (b) => {
       const st = status[b.id];
       const size = b.shape === "area" ? `${t("squareL")} · ${Math.round(b.area_m2 || 0).toLocaleString()} m²` : `${b.length_m} m`;
-      const where = b.name && b.district && b.district !== b.name ? `${b.name} (${b.district})` : (b.name || b.district || t("sectionNoName"));
+      const nm = b.name || t("sectionNoName");  // the street it runs along; the district in brackets
+      const where = b.district && b.district !== nm ? `${nm} (${b.district})` : nm;
       return `${esc(where)} · ${esc(size)}<br>${esc(t("net_" + stateOf(b)))}`
         + (st ? ` · #${st.alert_ids.join(", #")}` : "");
     };

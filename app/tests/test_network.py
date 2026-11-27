@@ -158,6 +158,44 @@ def test_a_long_pgis_line_is_cut_into_blocks_at_its_cross_streets():
     assert [f["properties"]["id"] for f in out if f["properties"]["pgis_obj"] != "p1"] == ["p2", "p3", "p4"]
 
 
+def test_every_section_is_named_after_the_street_it_runs_along():
+    """The city's data names many lines only by the district ("Centrs") or not at all, some misspelt or
+    with a route number. Each section takes the name of the street alongside (OSM)."""
+    from app.pgis_sidewalks import name_sections
+
+    def side(fid, lat, name, lon0=24.1100, lon1=24.1130):   # an east-west sidewalk, ~180 m
+        f = _pgis_line(fid, [[lon0, lat], [lon1, lat]])
+        f["properties"].update(name=name, district="Centrs")
+        return f
+
+    streets = [["Baznīcas iela", "road", [[24.1095, 56.95000], [24.1135, 56.95000]]],
+               ["Krišjāņa Barona iela", "road", [[24.1095, 56.95020], [24.1135, 56.95020]]],   # 22 m north
+               ["Ģertrūdes iela", "road", [[24.1115, 56.9490], [24.1115, 56.9510]]],          # across both
+               ["Parka taka", "path", [[24.1095, 56.95008], [24.1135, 56.95008]]]]
+    feats = [side("district", 56.95007, "Centrs"),                      # 8 m from Baznīcas, 14 m from Barona
+             side("none", 56.95007, None),
+             side("misspelt", 56.95007, "Baznicas iela (Marsruts Nr:1)"),
+             side("city", 56.95013, "Baznīcas iela"),                   # nearer Barona, but the city says Baznīcas
+             side("far", 56.96000, "Kupriču iela"),                     # no street mapped near it
+             side("far_district", 56.96000, "Centrs")]
+    stats = name_sections(feats, streets)
+    got = {f["properties"]["id"]: (f["properties"]["name"], f["properties"]["name_src"]) for f in feats}
+    assert got == {"district": ("Baznīcas iela", "osm"), "none": ("Baznīcas iela", "osm"),
+                   "misspelt": ("Baznīcas iela", "osm"),
+                   "city": ("Baznīcas iela", "osm"),                     # the city's own street wins when alongside
+                   "far": ("Kupriču iela", "pgis"),                      # nothing alongside: the city's name stays
+                   "far_district": (None, "none")}                       # a district is not a street name
+    assert stats == {"osm": 4, "pgis": 1, "none": 1}
+    assert feats[0]["properties"]["pgis_name"] == "Centrs"               # the city's name is kept
+    assert feats[1]["properties"]["pgis_name"] is None
+    # a street beats a named path alongside, and the cross street (not alongside) never names it
+    assert all(n != "Parka taka" and n != "Ģertrūdes iela" for n, _ in got.values())
+    # running it again on its own output gives the same names
+    again = {f["properties"]["id"]: f["properties"]["name"] for f in feats}
+    name_sections(feats, streets)
+    assert {f["properties"]["id"]: f["properties"]["name"] for f in feats} == again
+
+
 def test_a_wide_junction_is_one_cut_and_the_street_wins():
     from app.pgis_sidewalks import _cut_offsets
     # a crosswalk 35 m after a sidewalk end (two groups, closer than 40 m): one cut, on the street

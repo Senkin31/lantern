@@ -15,8 +15,9 @@ green: finished. Our alerts are the tasks (STATE below). Only lines that are dra
 colour or a dot never lands on a line nobody can see.
 
 With data/pgis_sidewalks.geojson (python -m app.pgis_sidewalks) the lines ARE the pGIS objects, 1:1:
-all of Riga, the maintained sidewalks only, with their real gaps. One object can have several pieces
-(same "obj"); an alert on any piece colours the whole object, like a task in pGIS.
+all of Riga, the maintained sidewalks only, with their real gaps, cut into blocks at the crossings.
+Lines with the same "obj" take one colour: each block is its own obj, so an alert colours its block
+(with --no-cut, obj is the pGIS object, and an alert on any piece colours all of it, like a task in pGIS).
 """
 import json
 import math
@@ -249,7 +250,7 @@ class Sidewalks:
     def network(self) -> list:
         """The map's base layer: drawn blocks (lines) and squares (areas), geometry only."""
         drawn = self.drawn_ids()
-        obj_m = defaultdict(float)  # a pGIS object's length is all its pieces together ("Garums m")
+        obj_m = defaultdict(float)  # an object's length is all its pieces together (a block: just itself)
         for b in self.blocks:
             obj_m[b["obj"]] += b["length_m"]
         out = [{"id": b["id"], "name": b["name"], "district": b["district"], "kind": b["kind"], "shape": "line",

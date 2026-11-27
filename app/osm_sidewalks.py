@@ -2,6 +2,7 @@
 
     python -m app.osm_sidewalks                       # default box: central Riga -> config/riga_sidewalks.geojson
     python -m app.osm_sidewalks --bbox 56.935,24.08,56.975,24.16 --out config/riga_sidewalks.geojson
+    python -m app.osm_sidewalks --crossings          # junctions + crosswalks, all Riga -> config/riga_crossings.json
 
 The app snaps alerts to these blocks and paints the block on the inspector map (app/segments.py).
 A block = a piece of a way between two junctions, at most MAX_BLOCK_M long.
@@ -19,9 +20,13 @@ from pathlib import Path
 from .config import ROOT
 
 OVERPASS = "https://overpass-api.de/api/interpreter"
+MIRRORS = [OVERPASS, "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+           "https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter"]
 DEFAULT_BBOX = (56.935, 24.08, 56.975, 24.16)   # south, west, north, east: Old Town, Centrs, around the demo
+RIGA_BBOX = (56.8626, 23.9544, 57.0809, 24.3203)  # all of Riga, the area of the city's pGIS sidewalk map
 MAX_BLOCK_M = 220.0
 STREETS = "pedestrian|living_street|residential|unclassified|tertiary|secondary|primary"
+ROADS = STREETS + "|trunk|motorway|primary_link|secondary_link|tertiary_link|trunk_link|motorway_link"
 
 
 def query(bbox) -> str:
@@ -95,11 +100,41 @@ def squares(osm: dict) -> tuple:
     return feats, outline_ways
 
 
-def fetch(bbox, q=None) -> dict:
+def fetch(bbox, q=None, url=OVERPASS) -> dict:
     data = urllib.parse.urlencode({"data": q or query(bbox)}).encode()
-    req = urllib.request.Request(OVERPASS, data=data, headers={"User-Agent": "sidewalk-map-script/0.1"})
+    req = urllib.request.Request(url, data=data, headers={"User-Agent": "sidewalk-map-script/0.1"})
     with urllib.request.urlopen(req, timeout=120) as r:
         return json.load(r)
+
+
+def crossings_query(bbox) -> str:
+    b = ",".join(f"{x:.5f}" for x in bbox)
+    return (f'[out:json][timeout:90];way["highway"~"^({ROADS})$"]({b})->.w;'
+            f'node(way_link.w:3-)->.j;'               # junctions: 3+ road ends meet
+            f'node["highway"="crossing"]({b})->.c;'   # crosswalks
+            f'(.j;.c;);out skel qt;')
+
+
+def crossings(bbox=RIGA_BBOX, tiles: int = 4) -> list:
+    """Street junctions and crosswalks as [lon, lat]: where app.pgis_sidewalks cuts the sidewalk lines
+    into blocks. All of Riga by default, tile by tile and server by server (the public Overpass servers
+    are often busy)."""
+    s, w, n, e = bbox
+    pts = {}
+    for iy in range(tiles):
+        for ix in range(tiles):
+            tb = (s + (n - s) * iy / tiles, w + (e - w) * ix / tiles,
+                  s + (n - s) * (iy + 1) / tiles, w + (e - w) * (ix + 1) / tiles)
+            for url in MIRRORS:
+                try:
+                    els = fetch(tb, crossings_query(tb), url).get("elements", [])
+                    break
+                except Exception as exc:  # busy or down: the next server
+                    print(f"tile {iy},{ix}: {url.split('/')[2]} failed ({exc})")
+            else:
+                raise RuntimeError(f"tile {iy},{ix}: every Overpass server failed, try again later")
+            pts.update({el["id"]: [round(el["lon"], 5), round(el["lat"], 5)] for el in els if "lon" in el})
+    return sorted(pts.values())
 
 
 def _dist_m(a, b) -> float:
@@ -224,12 +259,26 @@ def with_squares(lines: list, square_feats: list, outline_ways: set) -> list:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--bbox", default=",".join(map(str, DEFAULT_BBOX)), help="south,west,north,east")
-    ap.add_argument("--out", default="config/riga_sidewalks.geojson")
+    ap.add_argument("--out", help="default: config/riga_sidewalks.geojson (--crossings: config/riga_crossings.json)")
+    ap.add_argument("--crossings", action="store_true",
+                    help="only download the street junctions + crosswalks of all of Riga (cuts the pGIS lines into blocks)")
     ap.add_argument("--keep-paths", action="store_true", help="also keep park and courtyard paths")
     ap.add_argument("--remerge", action="store_true", help="no download: glue the blocks of the existing --out file")
     ap.add_argument("--add-squares", action="store_true", help="add squares (as areas) to the existing --out file")
     ap.add_argument("--squares-json", help="with --add-squares: a saved Overpass answer instead of downloading")
     a = ap.parse_args()
+    if a.crossings:
+        out = Path(a.out or "config/riga_crossings.json")
+        out = out if out.is_absolute() else ROOT / out
+        pts = crossings()
+        out.write_text(json.dumps({
+            "attribution": "(c) OpenStreetMap contributors, ODbL 1.0, https://www.openstreetmap.org/copyright",
+            "about": "Street junctions and crosswalks of Riga, [lon, lat]: where app.pgis_sidewalks cuts the "
+                     "sidewalk lines into blocks. Made by: python -m app.osm_sidewalks --crossings",
+            "points": pts}, separators=(",", ":")), encoding="utf-8")
+        print(f"{len(pts)} junctions and crosswalks -> {out} ({out.stat().st_size / 1024:.0f} KB)")
+        return
+    a.out = a.out or "config/riga_sidewalks.geojson"
     bbox = tuple(float(x) for x in a.bbox.split(","))
     out = Path(a.out) if Path(a.out).is_absolute() else ROOT / a.out
     if a.remerge or a.add_squares:

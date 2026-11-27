@@ -2,6 +2,7 @@
 line coloured by its latest alert, like Riga's pGIS map - blue none, red registered, yellow started,
 green finished - and every alert's dot sits on its line."""
 import json
+import math
 
 from app.segments import Sidewalks, network_status
 from app.tests.test_sections import SIDEWALK, STREET, alert
@@ -123,6 +124,48 @@ def test_an_alert_on_one_piece_colours_the_whole_pgis_object():
     assert {b["length_m"] for b in w.network()} == {round(w.blocks[0]["length_m"] + w.blocks[1]["length_m"])}
     # a report in the middle of the gap (30 m from both pieces) is on no maintained sidewalk: no colour
     assert network_status([alert(2, 56.95005, 24.1125, status="open")], w)["blocks"] == {}
+
+
+def _pgis_line(fid, coords):
+    return {"type": "Feature", "geometry": {"type": "LineString", "coordinates": coords},
+            "properties": {"id": fid, "obj": fid, "name": "Test iela", "kind": "sidewalk", "source": "pgis"}}
+
+
+def _len_m(coords):
+    from app.pgis_sidewalks import _xy
+    return sum(math.dist(_xy(coords[i]), _xy(coords[i + 1])) for i in range(len(coords) - 1))
+
+
+def test_a_long_pgis_line_is_cut_into_blocks_at_its_cross_streets():
+    from app.pgis_sidewalks import cut_sections
+    main = _pgis_line("p1", [[24.1100, 56.95009], [24.1130, 56.95009], [24.1180, 56.95009]])   # ~486 m, east-west
+    street = [[24.1125, 56.9498], [24.1125, 56.9504]]              # an OSM street crossing it at ~152 m
+    side_a = _pgis_line("p2", [[24.11490, 56.95016], [24.11490, 56.95100]])   # the two sidewalks of a side
+    side_b = _pgis_line("p3", [[24.11510, 56.95016], [24.11510, 56.95100]])   # street, ending 8 m from it
+    across = _pgis_line("p4", [[24.1140, 56.94991], [24.1165, 56.94991]])     # the other side, 20 m away
+    out = cut_sections([main, side_a, side_b, across], streets=[street])
+    secs = [f for f in out if f["properties"]["pgis_obj"] == "p1"]
+    assert [f["properties"]["id"] for f in secs] == ["p1.1", "p1.2", "p1.3"]   # one cut per cross street
+    assert [f["properties"]["obj"] for f in secs] == ["p1.1", "p1.2", "p1.3"]  # each block is its own object
+    lens = [_len_m(f["geometry"]["coordinates"]) for f in secs]
+    assert abs(lens[0] - 152) < 2                      # on the street
+    assert abs(lens[0] + lens[1] - 304) < 2            # between the two sidewalks of the side street
+    # lossless: the blocks together are exactly the pGIS line
+    joined = secs[0]["geometry"]["coordinates"] + [c for f in secs[1:] for c in f["geometry"]["coordinates"][1:]]
+    assert [c for c in joined if c in main["geometry"]["coordinates"]] == main["geometry"]["coordinates"]
+    assert abs(sum(lens) - _len_m(main["geometry"]["coordinates"])) < 0.01
+    # the other side's sidewalk runs alongside (a gap end, not a cross street) and the short lines have no crossing
+    assert [f["properties"]["id"] for f in out if f["properties"]["pgis_obj"] != "p1"] == ["p2", "p3", "p4"]
+
+
+def test_a_stretch_with_no_crossing_is_still_cut_evenly_and_an_alert_colours_only_its_block():
+    from app.pgis_sidewalks import MAX_SECTION_M, cut_sections
+    line = _pgis_line("p5", [[24.1100, 56.95009], [24.1199, 56.95009]])        # ~601 m, nothing crosses it
+    secs = cut_sections([line])
+    lens = [_len_m(f["geometry"]["coordinates"]) for f in secs]
+    assert len(secs) == math.ceil(sum(lens) / MAX_SECTION_M) and max(lens) - min(lens) < 0.5
+    st = network_status([alert(1, 56.95005, 24.1105, status="open")], Sidewalks(secs))
+    assert list(st["blocks"]) == ["p5.1"]                         # not the whole 600 m
 
 
 def test_a_maintained_line_inside_an_old_riga_zone_still_takes_its_alert():

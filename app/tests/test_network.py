@@ -28,6 +28,21 @@ def test_a_street_with_its_sidewalk_mapped_is_drawn_once():
     assert w.nearest(56.94990, 24.1110, 25)["id"] == "s1"   # the old /sections snapping is unchanged
 
 
+def test_lines_inside_a_square_are_not_drawn():
+    """An alert inside a square colours the whole square, so a path across it would stay blue forever."""
+    square = [[24.1210, 56.9545], [24.1225, 56.9545], [24.1225, 56.9555], [24.1210, 56.9555], [24.1210, 56.9545]]
+    path = [[24.1212, 56.9550], [24.1223, 56.9550]]
+    w = Sidewalks(feats() + [
+        {"type": "Feature", "properties": {"id": "q1", "name": "Test laukums", "kind": "square"},
+         "geometry": {"type": "Polygon", "coordinates": [square]}},
+        {"type": "Feature", "properties": {"id": "w2", "name": None, "kind": "sidewalk"},
+         "geometry": {"type": "LineString", "coordinates": path}}])
+    assert "w2" not in w.drawn_ids() and {"w1", "s2"} <= w.drawn_ids()
+    assert [b["id"] for b in w.network()][-1] == "q1"
+    st = network_status([alert(1, 56.9550, 24.1218, status="open")], w)
+    assert st["blocks"]["q1"]["state"] == "registered"
+
+
 def test_status_colours_follow_the_latest_task_like_pgis():
     w = Sidewalks(feats())
     st = network_status([alert(1, 56.95005, 24.1105, status="open")], w)

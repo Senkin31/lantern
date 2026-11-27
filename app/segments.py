@@ -190,7 +190,8 @@ class Sidewalks:
     # ------------------------------------------------------------------ the drawn network
     def drawn_ids(self) -> set:
         """Every sidewalk block, plus street centre lines that have no mapped sidewalk beside them (else a
-        street would show three lines: its centre and both sidewalks). Computed once, on first use."""
+        street would show three lines: its centre and both sidewalks). Lines that lie mostly inside a square
+        are left out: the square is drawn (and coloured) as one area. Computed once, on first use."""
         if self._drawn is not None:
             return self._drawn
         fine = defaultdict(list)  # 25 m cells -> sidewalk segments (block index, segment index)
@@ -215,17 +216,20 @@ class Sidewalks:
                             return True
             return False
 
+        def in_square(p) -> bool:
+            return any(self._inside(p, self.areas[i]["xy"])
+                       for i in self.area_grid.get((int(p[0] // CELL_M), int(p[1] // CELL_M)), ()))
+
         drawn = set()
         for b in self.blocks:
-            if b["kind"] == "sidewalk":
-                drawn.add(b["id"])
-                continue
             pts = []
             for (x1, y1), (x2, y2) in zip(b["xy"], b["xy"][1:]):
                 steps = max(1, int(math.dist((x1, y1), (x2, y2)) // SAMPLE_M))
                 pts += [(x1 + (x2 - x1) * k / steps, y1 + (y2 - y1) * k / steps) for k in range(steps)]
             pts.append(b["xy"][-1])
-            if sum(1 for p in pts if covered(p)) < COVER_SHARE * len(pts):
+            if self.areas and sum(1 for p in pts if in_square(p)) >= COVER_SHARE * len(pts):
+                continue  # inside a square: an alert there colours the square, so this line could never change
+            if b["kind"] == "sidewalk" or sum(1 for p in pts if covered(p)) < COVER_SHARE * len(pts):
                 drawn.add(b["id"])
         self._drawn = drawn
         return drawn

@@ -81,9 +81,8 @@
         <div class="msg" id="cam-msg" data-t="cam_starting">Atver kameru…</div>
         <button class="shutter" id="shutter" type="button" aria-label="Take photo" hidden></button>
       </div>
-      <div class="row" id="fallback-row" hidden>
-        <button class="btn ghost" id="fallback" type="button" data-t="fallback">Izmantot tālruņa kameru</button>
-        <input id="file" type="file" accept="image/*" capture="environment" hidden>
+      <div class="row" id="cam-row" hidden>
+        <button class="btn ghost" id="cam-retry" type="button" data-t="cam_retry">Atvērt kameru vēlreiz</button>
       </div>
       <div id="place" hidden>
         <div class="place-h" data-t="place_h">Vai punkts ir pareizajā vietā?</div>
@@ -92,7 +91,7 @@
       </div>
       <div class="loc" id="loc" data-t="loc_wait">Nosaka atrašanās vietu…</div>
       <div class="row" id="loc-row" hidden>
-        <button class="btn ghost" id="loc-retry" type="button" data-t="loc_retry">Mēģināt vēlreiz</button>
+        <button class="btn ghost" id="loc-retry" type="button" data-t="loc_retry">Noteikt vietu vēlreiz</button>
       </div>
       <div class="row" id="after-shot" hidden>
         <button class="btn ghost" id="retake" type="button" data-t="retake">Pārņemt</button>

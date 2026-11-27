@@ -336,7 +336,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         lat: float = Form(..., ge=-90, le=90),
         lon: float = Form(..., ge=-180, le=180),
         accuracy: Optional[float] = Form(None, ge=0),  # metres, from the phone
-        capture: str = Form("live"),                    # live: in-app camera; picker: the phone's file dialog
+        capture: str = Form("live"),                    # live: the app's own camera (the only kind taken)
         tg_pass: str = Form(...),
         gps_lat: Optional[float] = Form(None, ge=-90, le=90),    # the phone's own fix, when lat/lon is a pin
         gps_lon: Optional[float] = Form(None, ge=-180, le=180),  # the resident moved on the preview map
@@ -348,8 +348,9 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         device = tgapp.check_pass(tg_pass)
         if device is None:
             raise HTTPException(403, detail={"code": "bad_pass", "message": "open the form again from the Lantern bot"})
-        if capture not in ("live", "picker"):
-            raise HTTPException(422, "capture must be live or picker")
+        if capture != "live":  # no live camera, no report: no file dialog, no gallery
+            raise HTTPException(422, detail={"code": "live_only",
+                                             "message": "only a photo taken now in the app's camera is accepted"})
         if (gps_lat is None) != (gps_lon is None):
             raise HTTPException(422, detail={"code": "bad_fix", "message": "send gps_lat and gps_lon together"})
         gps = None

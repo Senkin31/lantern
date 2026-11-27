@@ -18,13 +18,13 @@
       proto_note: "Prototips, izveidots RobotHack 2026. Nav nevienas iestādes oficiāls pakalpojums.",
       title: "Ziņot par ietvi", lead: "Nofotografē vietu tagad. Foto un tava atrašanās vieta aizies kopā.",
       cam_starting: "Atver kameru…",
-      cam_denied: "Kamerai nav atļaujas. Atļauj kameru Telegram tālruņa iestatījumos vai izmanto tālruņa kameru zemāk.",
-      cam_none: "Šeit kamera neatveras. Izmanto tālruņa kameru zemāk.",
-      fallback: "Izmantot tālruņa kameru", retake: "Pārņemt", send: "Nosūtīt", sending: "Sūta…",
+      cam_denied: "Kamerai nav atļaujas. Bez kameras ziņot nevar: atļauj kameru Telegram tālruņa iestatījumos un spied «Atvērt kameru vēlreiz».",
+      cam_none: "Šeit kamera neatveras, un bez tās ziņot nevar. Atjaunini Telegram un atver formu vēlreiz no bota.",
+      cam_retry: "Atvērt kameru vēlreiz", retake: "Pārņemt", send: "Nosūtīt", sending: "Sūta…",
       loc_wait: "Nosaka atrašanās vietu…", loc_ok: "Vieta noteikta, precizitāte {m} m",
       loc_rough: "Tikai aptuvena vieta (±{m} m). Ieslēdz GPS vai izej ārā; nosūtīt var arī tā.",
-      loc_denied: "Atrašanās vietai nav atļaujas. Atļauj to un mēģini vēlreiz.",
-      loc_retry: "Mēģināt vēlreiz", loc_need: "Pagaidi, kamēr nosaka vietu, tad sūti.",
+      loc_denied: "Atrašanās vietai nav atļaujas. Bez tās ziņot nevar: atļauj to un spied «Noteikt vietu vēlreiz».",
+      loc_retry: "Noteikt vietu vēlreiz", loc_need: "Pagaidi, kamēr nosaka vietu, tad sūti.",
       close: "Aizvērt",
       privacy: "Foto tiek uzņemts tikai šeit, galerija netiek izmantota. Atrašanās vietu ņemam tikai šim ziņojumam.",
       desktop: "Atver šo tālrunī: Lantern vajag tālruņa kameru un atrašanās vietu.",
@@ -45,13 +45,13 @@
       proto_note: "Prototype made at RobotHack 2026. Not an official service of any authority.",
       title: "Report a sidewalk", lead: "Take the photo now. The photo and where you are go together.",
       cam_starting: "Opening the camera…",
-      cam_denied: "Camera access is blocked. Allow the camera for Telegram in the phone settings, or use the phone camera below.",
-      cam_none: "The camera does not open here. Use the phone camera below.",
-      fallback: "Use the phone camera", retake: "Retake", send: "Send", sending: "Sending…",
+      cam_denied: "Camera access is blocked. You can't report without the camera: allow it for Telegram in the phone settings, then press «Open the camera again».",
+      cam_none: "The camera does not open here, and you can't report without it. Update Telegram and open the form again from the bot.",
+      cam_retry: "Open the camera again", retake: "Retake", send: "Send", sending: "Sending…",
       loc_wait: "Finding your location…", loc_ok: "Location found, accurate to {m} m",
       loc_rough: "Only a rough location (±{m} m). Turn on GPS or step outside; you can still send.",
-      loc_denied: "Location access is off. Allow it, then try again.",
-      loc_retry: "Try again", loc_need: "Wait for the location, then send.",
+      loc_denied: "Location access is off. You can't report without it: allow it, then press «Find my location again».",
+      loc_retry: "Find my location again", loc_need: "Wait for the location, then send.",
       close: "Close",
       privacy: "The photo is taken only here, the gallery is never used. Your location is used for this report only.",
       desktop: "Open this on your phone: Lantern needs the phone's camera and location.",
@@ -311,10 +311,12 @@
     }
   }
 
+  // No live camera, no report: there is no file or gallery path (the server takes capture=live only).
   function cameraFailed(key) {
     camMsg.textContent = t(key);
     camMsg.hidden = false;
-    $("fallback-row").hidden = false;
+    shutter.hidden = true;
+    $("cam-row").hidden = false;
   }
 
   function showShot(blob, capture) {
@@ -325,7 +327,6 @@
     camMsg.hidden = true;
     shutter.hidden = true;
     afterShot.hidden = false;
-    $("fallback-row").hidden = true;
     $("frame").classList.add("small");
     if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
     getLocation(true);  // no-op while it is already following the position
@@ -350,14 +351,14 @@
     place.hide();
     $("frame").classList.remove("small");
     if (stream) { video.hidden = false; shutter.hidden = false; }
-    else { $("fallback-row").hidden = false; camMsg.hidden = false; video.hidden = false; }
+    else { $("cam-row").hidden = false; camMsg.hidden = false; video.hidden = false; }
   });
 
-  $("fallback").addEventListener("click", () => $("file").click());
-  $("file").addEventListener("change", (e) => {
-    const f = e.target.files && e.target.files[0];
-    if (f) showShot(f, "picker");
-    e.target.value = "";
+  $("cam-retry").addEventListener("click", () => {
+    $("cam-row").hidden = true;
+    camMsg.textContent = t("cam_starting");
+    camMsg.hidden = false;
+    startCamera();
   });
 
   // ------------------------------------------------------------------ send
@@ -371,7 +372,7 @@
     sendBtn.disabled = true;
     sendBtn.textContent = t("sending");
     const fd = new FormData();
-    fd.append("photo", shot.blob, shot.capture === "live" ? "camera.jpg" : (shot.blob.name || "photo.jpg"));
+    fd.append("photo", shot.blob, "camera.jpg");
     const p = place.point();  // the pin on the preview map and the phone's fix it came from
     const fix = p ? p.gps : loc;
     fd.append("lat", p ? p.lat : loc.lat);
@@ -386,7 +387,7 @@
       if (r.status === 201) return done(body);
       const code = body.detail && body.detail.code;
       say(code === "outside_area" ? "err_area" : r.status === 429 ? "err_many" : code === "bad_pass" ? "err_pass"
-        : code === "moved_too_far" ? "err_moved" : "err_send");
+        : code === "moved_too_far" ? "err_moved" : code === "live_only" ? "cam_none" : "err_send");
     } catch (e) {
       say("err_send");
     }

@@ -56,18 +56,21 @@ def test_live_photo_with_gps_counts_as_exact(make_client):
     assert engine.db.one("SELECT device_id FROM reports WHERE id = ?", (body["report_id"],))["device_id"] == "dev-app"
 
 
-def test_rough_location_and_file_dialog_are_flagged(make_client):
+def test_rough_location_is_flagged_and_only_the_live_camera_is_taken(make_client):
     client, engine, _ = setup(make_client)
     rough = app_report(client, tgapp.make_pass("dev-1"), accuracy=900, seed=2).json()
     assert engine.alert(rough["alert_id"])["status"] == "watch"  # wifi / cell-tower fix alone does not dispatch
     unknown = app_report(client, tgapp.make_pass("dev-2"), accuracy=None, seed=3, lat=56.9700, lon=24.1500).json()
-    picked = app_report(client, tgapp.make_pass("dev-3"), capture="picker", seed=4, lat=56.9500, lon=24.1000)
-    assert picked.status_code == 201
     reps = {r["id"]: r for r in client.get("/reports", params={"role": "inspector"}).json()}
     assert reps[rough["report_id"]]["loc_source"] == "coarse" and reps[rough["report_id"]]["flags"] == ["coarse_location"]
     assert reps[unknown["report_id"]]["loc_source"] == "coarse"
-    assert reps[picked.json()["report_id"]]["flags"] == ["picked_photo"]
-    assert picked.json()["relevant"] == "review"  # the file dialog may offer the gallery: inspector first
+    # no live camera, no report: the phone's file dialog (or anything else) is refused and nothing is stored
+    for capture in ("picker", "gallery", "upload"):
+        r = app_report(client, tgapp.make_pass("dev-3"), capture=capture, seed=4, lat=56.9500, lon=24.1000)
+        assert r.status_code == 422 and r.json()["detail"]["code"] == "live_only", capture
+    assert len(client.get("/reports", params={"role": "inspector"}).json()) == len(reps)
+    page = client.get("/tg").text                                       # and the page offers no file dialog
+    assert 'type="file"' not in page and 'id="cam-retry"' in page
 
 
 def test_pin_moved_a_few_metres_is_kept_with_the_phone_fix(make_client):

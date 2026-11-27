@@ -301,7 +301,7 @@ class Engine:
         if (r.get("pin_moved_m") or 0) >= 1:
             flags.append("moved_pin")  # Mini App: the resident moved the pin on the preview map (max PIN_MOVE_M)
         if r.get("capture") == "picker":
-            flags.append("picked_photo")  # Mini App camera was unavailable: the phone's file dialog was used
+            flags.append("picked_photo")  # older Mini App only: the phone's file dialog (now refused at the API)
             if relevant == "accept":
                 relevant = "review"  # that dialog may offer the gallery: the inspector looks first
         if relevant == "accept" and (analysis.get("source") in ("screenshot", "webcam", "stock", "screen")

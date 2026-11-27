@@ -98,7 +98,7 @@
       capture_live: "Taken live in the Telegram app", captureTip_live: "Photo taken in the app's own camera just now, at the phone's GPS position",
       sectionLegend: "Street section or square (camera or 2+ residents)", sectionNoName: "Sidewalk", squareL: "square",
       bubbleLegend: "Several alerts close together", bubbleTip: "{n} alerts here: click to zoom in",
-      net_title: "Sidewalks (pGIS)", net_none: "No task", net_registered: "Registered: to be cleaned",
+      net_title: "Sidewalks", net_title_pgis: "Sidewalks (pGIS)", net_none: "No task", net_registered: "Registered: to be cleaned",
       net_started: "Started: to be checked", net_finished: "Finished",
       net_on: "Sidewalk lines", legendDots: "Cases (colour = urgency)", dotsZoomNote: "Points appear when you zoom in",
       exportGeo: "Export GeoJSON", exportCsv: "Export CSV", noStats: "No alerts have been sent to contractors yet.",
@@ -200,7 +200,7 @@
       capture_live: "Uzņemts tieši Telegram lietotnē", captureTip_live: "Foto uzņemts lietotnes kamerā tikko, tālruņa GPS vietā",
       sectionLegend: "Ielas posms vai laukums (kamera vai 2+ iedzīvotāji)", sectionNoName: "Ietve", squareL: "laukums",
       bubbleLegend: "Vairāki gadījumi tuvu", bubbleTip: "Šeit {n} gadījumi: klikšķini, lai pietuvinātu",
-      net_title: "Ietves (pGIS)", net_none: "Nav uzdevuma", net_registered: "Reģistrēts: jātīra",
+      net_title: "Ietves", net_title_pgis: "Ietves (pGIS)", net_none: "Nav uzdevuma", net_registered: "Reģistrēts: jātīra",
       net_started: "Uzsākts: jāpārbauda", net_finished: "Pabeigts",
       net_on: "Ietvju līnijas", legendDots: "Gadījumi (krāsa = steidzamība)", dotsZoomNote: "Punkti parādās, kad pietuvina",
       exportGeo: "Eksportēt GeoJSON", exportCsv: "Eksportēt CSV", noStats: "Darbuzņēmējiem vēl nekas nav nosūtīts.",
@@ -433,6 +433,7 @@
     const renderer = L.canvas({ pane: "network", padding: 0.5, tolerance: 5 });
     const items = [];
     let status = {};
+    let source = "osm";  // "pgis" when the lines are the city's pGIS data
     const width = () => (map.getZoom() >= 17 ? 3 : 2);
     const stateOf = (b) => (status[b.id] ? status[b.id].state : "none");
     const styleOf = (b) => {
@@ -450,6 +451,7 @@
     };
     const ready = api("/map/network").then((r) => {
       if (r.attribution && map.attributionControl) map.attributionControl.addAttribution(esc(r.attribution));
+      source = r.source || "osm";
       (r.blocks || []).forEach((b) => {
         const o = { renderer, pane: "network", opacity: 1, lineCap: "butt", lineJoin: "round", ...styleOf(b) };
         const l = b.shape === "area" ? L.polygon(b.coords, o) : L.polyline(b.coords, o);
@@ -468,7 +470,7 @@
     }
     map.on("zoomend", () => setStatus(status));
     function legend() {
-      return `<div class="legend-h">${esc(t("net_title"))}</div>`
+      return `<div class="legend-h">${esc(t(source === "pgis" ? "net_title_pgis" : "net_title"))}</div>`
         + NET_STATES.map((k) => `<div><i class="net-line" style="background:${NET[k]}"></i>${esc(t("net_" + k))}</div>`).join("");
     }
     return { ready, setStatus, legend, count: () => items.length };

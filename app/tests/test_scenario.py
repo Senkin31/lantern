@@ -171,6 +171,7 @@ def test_demo_day_25_11(make_client, mock_dir):
     assert len(ev["resident_photos"]) == 2 and "dev-1" not in json.dumps(ev)
     html = c.get(f"/alerts/{crossing}/evidence")
     assert html.status_code == 200 and "localhost:8001/media/frames" in html.text and "dev-1" not in html.text
+    assert f"Evidence package · case No. {crossing}</h1>" in html.text  # the app's word, not "alert"
     assert c.get(f"/alerts/{crossing}/evidence", params={"role": "contractor"}).status_code == 403
 
     # --- privacy: the contractor never gets full frames or the evidence link

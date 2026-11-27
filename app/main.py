@@ -546,6 +546,7 @@ def build_app(db_path: Optional[Path] = None, start_ticker: bool = True) -> Fast
         if "plain" not in net_cache:
             sw = views.sidewalks
             body = {"attribution": (sw.attribution if sw and sw.attribution else "© OpenStreetMap contributors, ODbL"),
+                    "source": sw.source if sw else "osm",  # the legend names pGIS only when the lines are pGIS
                     "blocks": sw.network() if sw else []}
             net_cache["plain"] = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
             net_cache["gzip"] = gzip.compress(net_cache["plain"], 6)

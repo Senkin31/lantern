@@ -83,6 +83,7 @@ def test_map_endpoints(make_client, tmp_path, monkeypatch):
     assert [b["id"] for b in body["blocks"]] == ["w1", "s2"] and "OpenStreetMap" in body["attribution"]
     assert body["blocks"][0]["coords"][0] == [56.95009, 24.11]
     assert client.get("/map/network", headers={"Accept-Encoding": "identity"}).json() == body
+    assert body["source"] == "osm"  # the legend says "(pGIS)" only for the city's data
 
     rep = send(client, "dev-1", 56.95005, 24.1105, 1)
     st = client.get("/map/status").json()

@@ -56,8 +56,9 @@ def _severity_rank(a) -> int:
 class Sidewalks:
     """Blocks of sidewalk / street with a 100 m grid index; coordinates in metres around Riga."""
 
-    def __init__(self, features: list, attribution: Optional[str] = None):
+    def __init__(self, features: list, attribution: Optional[str] = None, source: Optional[str] = None):
         self.attribution = attribution
+        self.source = source or "osm"  # "pgis" for data/pgis_sidewalks.geojson, else OpenStreetMap
         self.objs = defaultdict(list)  # object id -> ids of its pieces (a pGIS object can have several)
         self.blocks = []
         self.areas = []  # squares / pedestrian areas: an alert inside one belongs to the whole square
@@ -173,7 +174,7 @@ class Sidewalks:
         if not path or not Path(path).is_file():
             return None
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        return cls(data.get("features", []), data.get("attribution"))
+        return cls(data.get("features", []), data.get("attribution"), data.get("source"))
 
     def xy(self, lat: float, lon: float):
         return ((lon - 24.0) * self.kx, (lat - self.lat0) * self.ky)

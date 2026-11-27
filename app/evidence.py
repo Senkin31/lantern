@@ -16,7 +16,7 @@ T = {
         "verified_at": "Confirmed (clear frame / inspector)",
         "act": "Defect act (suggested)", "notice": "Letter to the contractor (suggested)",
         "no": "impassable", "partly": "partly passable", "yes": "passable", "by_ai": "AI photo assessment",
-        "title": "Evidence package", "alert": "alert", "generated": "Generated", "riga": "Riga", "status": "status",
+        "title": "Evidence package", "alert": "case No.", "generated": "Generated", "riga": "Riga", "status": "status",
         "overdue": "OVERDUE", "place": "Place", "district": "District", "contractor": "Contractor",
         "camera_zone": "Camera / zone", "resident": "resident report", "place_type": "Place type",
         "coords": "Coordinates", "deadline": "Clearing deadline", "deadline_short": "Deadline",
@@ -38,7 +38,7 @@ T = {
         "verified_at": "Apstiprināts (tīrs kadrs / inspektors)",
         "act": "Defektu akts (ieteikums)", "notice": "Vēstule darbuzņēmējam (ieteikums)",
         "no": "nevar paiet", "partly": "daļēji var paiet", "yes": "var paiet", "by_ai": "MI foto vērtējums",
-        "title": "Pierādījumu pakete", "alert": "trauksme", "generated": "Sagatavots", "riga": "Rīga", "status": "statuss",
+        "title": "Pierādījumu pakete", "alert": "gadījums Nr.", "generated": "Sagatavots", "riga": "Rīga", "status": "statuss",
         "overdue": "NOKAVĒTS", "place": "Vieta", "district": "Rajons", "contractor": "Darbuzņēmējs",
         "camera_zone": "Kamera / zona", "resident": "iedzīvotāja ziņojums", "place_type": "Vietas tips",
         "coords": "Koordinātas", "deadline": "Tīrīšanas termiņš", "deadline_short": "Termiņš",
@@ -90,7 +90,7 @@ def render(ev: dict, tile_url: str, tile_attribution: str, images_credit: str, s
                       "attr": tile_attribution}).replace("</", "<\\/")
     return f"""<!doctype html>
 <html lang="{_e(lang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lantern · {_e(t['title'])} #{ev['alert_id']}</title>
+<title>Lantern · {_e(t['title'])} · {_e(t['alert'])} {ev['alert_id']}</title>
 <link rel="stylesheet" href="/assets/vendor/leaflet/leaflet.css">
 <style>
 :root {{ --ink:#1d2430; --muted:#667085; --line:#d9dee6; --red:#c62828; --act:#8e24aa; --bg:#fff; }}
@@ -119,7 +119,7 @@ footer {{ margin-top:28px; font-size:12px; color:var(--muted); border-top:1px so
 </style></head><body>
 <p class="noprint"><a href="?role=inspector&amp;lang=en">EN</a><a href="?role=inspector&amp;lang=lv">LV</a>
 <button onclick="print()">{_e(t['print'])}</button></p>
-<h1>{_e(t['title'])} · {_e(t['alert'])} #{ev['alert_id']}</h1>
+<h1>{_e(t['title'])} · {_e(t['alert'])} {ev['alert_id']}</h1>
 <div class="muted">{_e(t['generated'])} {_e(ev['generated_riga'])} ({_e(t['riga'])}) · {_e(t['status'])} <b>{_e(ev['status'])}</b>
 {overdue}</div>
 <div class="muted small">{reopened}</div>

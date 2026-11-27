@@ -100,28 +100,33 @@ LOGIN_HTML = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lantern login</title>
 <style>
-  :root { --bg: #f4f6f9; --card: #ffffff; --text: #14213d; --muted: #5b6475; --line: #d9dee7; --accent: #f2a93b;
-          --bad: #c62828; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #0f1623; --card: #172235; --text: #eef2f8; --muted: #9aa6ba;
-          --line: #2a3850; --bad: #ff8a80; } }
+  :root { --bg: #eef1f4; --card: #ffffff; --text: #1b1f24; --muted: #545e6b; --line: #c6cdd6; --ink: #0b3a6b;
+          --bad: #b3261e; color-scheme: light; }
   * { box-sizing: border-box; }
-  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px;
-         background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  form { width: 100%; max-width: 360px; background: var(--card); border: 1px solid var(--line); border-radius: 14px;
-         padding: 24px; }
-  h1 { font-size: 20px; margin: 0 0 4px; display: flex; gap: 8px; align-items: center; }
+  body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); color: var(--text);
+         font: 15px/1.45 "Segoe UI", Roboto, Arial, sans-serif; }
+  header { background: var(--ink); color: #fff; padding: 12px 20px; border-bottom: 4px solid #082c52; }
+  header b { font-size: 19px; display: block; } header span { font-size: 13px; color: #c9d6e6; }
+  main { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; }
+  form { width: 100%; max-width: 380px; background: var(--card); border: 1px solid var(--line); padding: 24px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
   p { color: var(--muted); margin: 0 0 18px; font-size: 14px; }
   label { display: block; font-weight: 600; margin: 12px 0 4px; font-size: 14px; }
-  input { width: 100%; padding: 11px 12px; border-radius: 9px; border: 1px solid var(--line); background: transparent;
+  input { width: 100%; padding: 9px 10px; border-radius: 2px; border: 1px solid #8a94a3; background: #fff;
           color: var(--text); font: inherit; }
-  button { width: 100%; margin-top: 18px; padding: 12px; border: 0; border-radius: 9px; background: var(--accent);
-           color: #1b1300; font: inherit; font-weight: 700; cursor: pointer; }
+  input:focus { outline: 3px solid #ffbf47; outline-offset: 0; border-color: var(--ink); }
+  button { width: 100%; margin-top: 18px; padding: 11px; border: 0; border-radius: 2px; background: var(--ink);
+           color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+  button:hover { background: #082c52; }
   .err { color: var(--bad); font-weight: 600; margin-top: 12px; font-size: 14px; }
+  footer { font-size: 12px; color: var(--muted); padding: 10px 20px; border-top: 1px solid var(--line); background: #fff; }
 </style>
 </head>
 <body>
+<header><b>Lantern</b><span>Ietvju ziemas uzturēšanas uzraudzība / Winter sidewalk maintenance supervision</span></header>
+<main>
 <form method="post" action="/login">
-  <h1>🏮 Lantern</h1>
+  <h1>Ienākt / Log in</h1>
   <p>Ienāc, lai turpinātu / Log in to continue</p>
   <input type="hidden" name="next" value="__NEXT__">
   <label for="u">Lietotājs / Username</label>
@@ -131,6 +136,8 @@ LOGIN_HTML = """<!doctype html>
   __ERROR__
   <button type="submit">Ienākt / Log in</button>
 </form>
+</main>
+<footer>Prototips (RobotHack 2026), nav oficiāls pakalpojums / Prototype (RobotHack 2026), not an official service</footer>
 </body>
 </html>
 """

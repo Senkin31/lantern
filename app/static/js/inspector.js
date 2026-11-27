@@ -6,7 +6,7 @@
 
   const S = {
     meta: null, map: null, alerts: [], settings: null,
-    tab: "today", selected: null, detail: null, filter: "active",
+    tab: "today", selected: null, detail: null, filter: "active", moreOpen: false,
     layers: new Map(), fitted: false, rendered: {}, withinHours: 24,
     data: { today: null, reviewReports: null, rejectReports: null, stats: null },
   };
@@ -93,8 +93,8 @@
         <span class="kv">${esc(t("rigaTime"))}: <b id="dNow"></b> <span class="muted small" id="dClock"></span></span>
         <span class="kv">${esc(t("snowfallEnd"))}: <b id="dSnow"></b></span>
         <span class="kv" title="${esc(t("deadlineRule"))}">${esc(t("deadline"))}: <b id="dDeadline"></b> <span class="countdown" id="dCount"></span></span>
-        <button class="btn" id="dSnowStart" type="button">🌨 ${esc(t("btnSnowStart"))}</button>
-        <button class="btn primary" id="dSnowBtn" type="button">❄ ${esc(t("btnSnowfall"))}</button>
+        <button class="btn" id="dSnowStart" type="button">${esc(t("btnSnowStart"))}</button>
+        <button class="btn" id="dSnowBtn" type="button">${esc(t("btnSnowfall"))}</button>
         <button class="btn bad" id="dReset" type="button">${esc(t("btnReset"))}</button>`;
       el.dataset.built = "1";
       $("#dSnowStart").addEventListener("click", () => postSnowfall({ start: "now", source: "inspector" }));
@@ -168,11 +168,8 @@
       const d = L.DomUtil.create("div", "map-legend");
       const c = L$.COLORS;
       d.innerHTML = (S.network ? S.network.legend() : "") + `<div class="legend-h">${esc(t("legendDots"))}</div>`
-        + [["high", c.high], ["medium", c.medium], ["low", c.low]].map(([k, col]) => `<div><i style="background:${col}"></i>${esc(t("lv_" + k))}</div>`).join("")
-        + `<div><i style="background:${c.watch}"></i>${esc(t("st_watch"))}</div>`
-        + `<div><i style="background:${c.reopened}"></i>${esc(t("st_reopened"))}</div>`
-        + `<div><i style="background:${c.verified}"></i>${esc(t("st_verified"))}</div>`
-        + `<div><i style="background:${c.cleared}"></i>${esc(t("st_cleared_in_time"))}</div>`
+        + [["lv_high", c.high], ["lv_medium", c.medium], ["lv_low", c.low], ["closedL", c.verified]]
+          .map(([k, col]) => `<div><i class="dot" style="background:${col}"></i>${esc(t(k))}</div>`).join("")
         + `<div class="legend-note">${esc(t("dotsZoomNote"))}</div>`;
       return d;
     };
@@ -186,8 +183,8 @@
 
   // anti-fake flags from the server: why this report waits for the inspector instead of going straight on
   function trustChips(r) {
-    const live = r.capture === "live" ? `<div class="chip ok" title="${esc(t("captureTip_live"))}">${esc(t("capture_live"))}</div>` : "";
-    return live + (r.flags || []).map((f) => `<div class="chip warn" title="${esc(t("flagTip_" + f))}">${esc(t("flag_" + f))}</div>`).join("");
+    const live = r.capture === "live" ? `<div class="flag flag-ok" title="${esc(t("captureTip_live"))}">${esc(t("capture_live"))}</div>` : "";
+    return live + (r.flags || []).map((f) => `<div class="flag flag-red" title="${esc(t("flagTip_" + f))}">${esc(t("flag_" + f))}</div>`).join("");
   }
 
   function styleFor(a) {
@@ -246,7 +243,7 @@
       seen.add(a.id);
       const st = styleFor(a);
       let l = S.layers.get(a.id);
-      const tip = `#${a.id} · ${t("st_" + a.status)} · ${t("lv_" + a.urgency_level)} (${a.urgency_score})${a.opened_at ? " · " + t("sev_" + a.severity) : ""}${a.overdue ? " · " + t("overdue") : ""}<br>${esc(L$.place(a.place_type))}${a.report_count ? ` · ${a.report_count} 👤` : ""}`;
+      const tip = `${esc(t("caseNo"))} ${a.id} · ${esc(t("st_" + a.status))}${a.overdue ? " · " + esc(t("overdue")) : ""}<br>${esc(L$.place(a.place_type))}, ${esc(a.district || "")}`;
       if (!l) {
         l = {};
         l.marker = L.circleMarker(dotAt.get(a.id) || a.map_point || [a.lat, a.lon], st.marker).addTo(S.map);
@@ -339,28 +336,29 @@
     if (wh) wh.addEventListener("change", () => { const v = parseFloat(wh.value); if (v > 0) { S.withinHours = v; refresh(); } });
   }
 
+  // only what is worth a glance in the list; everything else is in the card
+  const LIST_FLAGS = ["overdue", "reopened", "high", "possible_ice", "ice_report", "check_done", "review_report", "no_camera", "problem_place"];
+  const RED_FLAGS = ["overdue", "high", "possible_ice", "ice_report"];
+  const flagHTML = (w) => `<span class="flag ${RED_FLAGS.includes(w) ? "flag-red" : ""}">${esc(t("why_" + w))}</span>`;
+
   function itemHTML(a, rank) {
-    const col = L$.alertColor(a);
-    const chips = (a.why || a.inspector_flags || []).filter((w) => w !== "act").map((w) => {
-      const cls = w === "act" ? "sev-act" : w === "overdue" ? "overdue" : w === "reopened" ? "purple"
-        : (w === "high" || w === "possible_ice" || w === "ice_report") ? "alarm" : "warn";
-      return `<span class="chip ${cls}">${esc(t("why_" + w))}</span>`;
-    }).join("");
+    const flags = (a.why || a.inspector_flags || []).filter((w) => LIST_FLAGS.includes(w));
+    if (a.overdue && !flags.includes("overdue")) flags.unshift("overdue");
     const meta = [
-      esc(L$.place(a.place_type)),
-      esc(a.contractor_name || a.district || ""),
-      a.report_count ? `${a.report_count} 👤` : "",
-      a.zone_id ? "📷" : "",
-      `${esc(t("firstSeen"))}: ${L$.sinceSpan(a.first_seen_at, t("ago"))}`,
+      `${esc(t("caseShort"))} ${a.id}`,
+      esc(a.contractor_name || ""),
+      a.zone_id ? esc(t("srcCamera")) : "",
+      a.report_count ? esc(t("nReports", { n: a.report_count })) : "",
+      L$.sinceSpan(a.first_seen_at, t("ago")),
     ].filter(Boolean).join(" · ");
-    return `<button type="button" class="item ${a.status === "watch" ? "watchy" : ""} ${S.selected === a.id ? "active" : ""}" data-alert="${a.id}">
-      <span class="bar" style="background:${col}"></span>
-      <span>
-        <span class="title">#${a.id} ${L$.statusBadge(a.status)} ${a.opened_at && !a.why ? L$.severityBadge(a) : ""} ${a.overdue && !a.why ? `<span class="chip overdue">${esc(t("overdue"))}</span>` : ""} ${a.flagged_for_council ? `<span class="chip purple">⚑</span>` : ""}</span>
+    return `<button type="button" class="item ${S.selected === a.id ? "active" : ""}" data-alert="${a.id}">
+      <span class="bar" style="background:${L$.alertColor(a)}"></span>
+      <span class="item-main">
+        <span class="title">${rank ? `<span class="rank">${rank}.</span>` : ""}${esc(L$.place(a.place_type))}, ${esc(a.district || t("none"))}</span>
         <span class="meta">${meta}</span>
-        ${chips ? `<span style="display:block;margin-top:4px">${chips}</span>` : ""}
+        ${flags.length ? `<span class="flags">${flags.map(flagHTML).join("")}</span>` : ""}
       </span>
-      <span class="right">${rank ? `<span class="rank">${rank}</span>` : ""}${L$.levelBadge(a.urgency_level, a.status)}<span class="muted small">${a.urgency_score}</span></span>
+      <span class="right">${L$.statusBadge(a.status)}</span>
     </button>`;
   }
 
@@ -385,18 +383,18 @@
   }
 
   function modHTML(r, showActions) {
-    const ai = [r.relevant, r.ai_hint, r.ai_score != null ? (+r.ai_score).toFixed(2) : null].filter(Boolean).join(" · ");
+    const ai = [r.relevant, r.ai_hint].filter(Boolean).join(" · ");
     return `<div class="mod">
       ${r.photo_url ? `<img src="${esc(r.photo_url)}" data-zoom="${esc(r.photo_url)}" alt="" loading="lazy">` : "<div></div>"}
       <div>
-        <div><b>#${r.id}</b> · ${esc(L$.fmtTime(r.timestamp))} · ${esc(r.channel || "")}</div>
+        <div><b>${esc(t("reportNo"))} ${r.id}</b> · ${esc(L$.fmtTime(r.timestamp))}</div>
         <div class="small">${esc(t("ps_" + r.passable))}${r.passable_by === "ai" ? ` (${esc(t("byAi"))})` : ""} · ${esc(L$.hazard(r.hazard))} · ${esc(L$.place(r.place_type))}</div>
         ${r.comment ? `<div class="small">“${esc(r.comment)}”</div>` : ""}
         ${r.registration_no ? `<div class="small">${esc(t("regNo"))}: <b>${esc(r.registration_no)}</b></div>` : ""}
         <div class="small muted">${esc(t("aiSays"))}: ${esc(ai)}${r.ai_note ? ` — ${esc(r.ai_note)}` : ""}</div>
-        ${r.same_photo_as ? `<div class="chip warn">${esc(t("samePhotoAs", { n: r.same_photo_as }))}</div>` : ""}
+        ${r.same_photo_as ? `<div class="flag flag-red">${esc(t("samePhotoAs", { n: r.same_photo_as }))}</div>` : ""}
         ${trustChips(r)}
-        ${r.alert_id ? `<div class="small"><a href="#" data-alert="${r.alert_id}">${esc(t("alert"))} #${r.alert_id}</a></div>` : ""}
+        ${r.alert_id ? `<div class="small"><a href="#" data-alert="${r.alert_id}">${esc(t("caseNo"))} ${r.alert_id}</a></div>` : ""}
         ${showActions ? `<div class="actions" style="margin-top:6px">
           <button class="btn good" type="button" data-moderate="accept" data-id="${r.id}">${esc(t("accept"))}</button>
           ${r.relevant !== "reject" ? `<button class="btn bad" type="button" data-moderate="reject" data-id="${r.id}">${esc(t("reject"))}</button>` : ""}
@@ -454,8 +452,8 @@
     const st = S.data.stats;
     if (!st) return `<div class="empty">${esc(t("loading"))}</div>`;
     const exp = `<div class="actions" style="margin:6px 0 12px">
-      <a class="btn" href="/export.geojson" download>⤓ ${esc(t("exportGeo"))}</a>
-      <a class="btn" href="/export.csv" download>⤓ ${esc(t("exportCsv"))}</a></div>`;
+      <a class="btn" href="/export.geojson" download>${esc(t("exportGeo"))}</a>
+      <a class="btn" href="/export.csv" download>${esc(t("exportCsv"))}</a></div>`;
     const head = `<div class="panel-head"><h2>${esc(t("tabStats"))}</h2>
       <span class="group"><label class="muted small" for="withinH">${esc(t("withinH"))}</label>
       <input id="withinH" type="number" min="0.5" step="0.5" value="${esc(S.withinHours)}" style="width:70px;padding:6px;border:1px solid var(--line);border-radius:7px;background:var(--surface-2)"></span></div>`;
@@ -480,39 +478,27 @@
   }
 
   function cardHTML(d) {
-    const flags = d.inspector_flags || [];
-    const reasons = (d.urgency_reasons || []).map((r) => `<li><span>${esc(L$.reasonText(r))}</span><span class="pts">${r.points != null ? "+" + r.points : ""}</span></li>`).join("");
-    const tl = [
-      [t("firstSeen"), L$.fmtTime(d.first_seen_at)],
-      [t("deadlineAt"), L$.fmtTime(d.deadline_at)],
-      [t("detected"), L$.fmtTime(d.detected_at)],
-      [t("opened"), L$.fmtTime(d.notified_at)],
-      [t("fixDue"), d.fix_due_at ? { html: `${esc(L$.fmtTime(d.fix_due_at))}${d.overdue ? ` <span class="chip overdue">${esc(t("overdue"))}</span>` : ""}` } : t("none")],
-      [t("doneReported"), L$.fmtTime(d.done_reported_at)],
-      [t("verified"), L$.fmtTime(d.verified_at)],
-      [t("responseTime"), d.response_hours != null ? `${L$.hours(d.response_hours)} ${t("h")}` : (d.notified_at && !L$.isClosed(d) ? { html: L$.sinceSpan(d.notified_at, "…") } : t("none"))],
-      [t("notifyDelay"), d.notify_seconds != null ? L$.fmtDur(d.notify_seconds) : t("none")],
-      [t("reopenedTimes"), `${d.reopened_count} ${t("times")}`],
-    ].map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v && v.html ? v.html : esc(v)}</dd>`).join("");
-    const hasFrames = d.before_frame_url || d.after_frame_url;
-    const ba = hasFrames ? `<div class="ba">${frameFig(t("before"), d.before_frame_url, d.before_crop_url)}${d.after_frame_url ? frameFig(t("after"), d.after_frame_url, d.after_crop_url) : "<figure></figure>"}</div>`
-      : `<p class="muted small">${esc(t("noFrames"))}</p>`;
-    const reps = (d.reports || []).length ? `<div class="photos">${d.reports.map((r) => `<div class="photo-item">
+    const flags = (d.inspector_flags || []).filter((f) => f !== "low_confidence");
+    const src = (d.source_types || []).map((s) => t(s === "camera" ? "srcCamera" : "srcResidents")).join(", ");
+    const facts = [
+      [t("contractorL"), esc(d.contractor_name || t("none"))],
+      [t("fixDue"), d.fix_due_at ? `${esc(L$.fmtTime(d.fix_due_at))}${d.overdue ? ` <span class="flag flag-red">${esc(t("overdue"))}</span>` : ""}` : esc(t("none"))],
+      [t("detectedBy"), esc(src || t("none"))],
+      [t("firstSeen"), esc(L$.fmtTime(d.first_seen_at))],
+      [t("situation"), esc(t("hz_" + (d.hazard_now || "other")))],
+    ].map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("");
+
+    // camera frames before / after; resident photos have their own section
+    const photos = d.before_frame_url || d.after_frame_url
+      ? `<div class="ba">${frameFig(t("before"), d.before_frame_url, d.before_crop_url)}${d.after_frame_url ? frameFig(t("after"), d.after_frame_url, d.after_crop_url) : "<figure></figure>"}</div>` : "";
+    const reps = (d.reports || []).map((r) => `<div class="photo-item">
         ${r.photo_url ? `<img src="${esc(r.photo_url)}" data-zoom="${esc(r.photo_url)}" alt="" loading="lazy">` : ""}
-        <div><b>${esc(t("ps_" + r.passable))}${r.passable_by === "ai" ? ` (${esc(t("byAi"))})` : ""}</b> · ${esc(L$.hazard(r.hazard))}</div>
-        <div>${esc(L$.fmtTime(r.timestamp))} · ${esc(r.channel || "")} · ${esc(r.device || "")}</div>
+        <div><b>${esc(t("ps_" + r.passable))}</b> · ${esc(L$.fmtTime(r.timestamp))}</div>
         ${r.comment ? `<div>“${esc(r.comment)}”</div>` : ""}
-        ${r.registration_no ? `<div>${esc(t("regNo"))}: <b>${esc(r.registration_no)}</b></div>` : ""}
-        ${r.duplicate ? `<div class="chip">${esc(t("duplicate"))}</div>` : (!r.counted ? `<div class="chip warn">${esc(t("notCounted"))} (${esc(r.relevant)})</div>` : "")}
+        ${r.registration_no ? `<div>${esc(t("regNo"))}: ${esc(r.registration_no)}</div>` : ""}
+        ${r.duplicate ? `<div class="flag">${esc(t("duplicate"))}</div>` : (!r.counted ? `<div class="flag">${esc(t("notCounted"))}</div>` : "")}
         ${trustChips(r)}
-      </div>`).join("")}</div>` : `<p class="muted small">${esc(t("noReports"))}</p>`;
-    const sigs = (d.signals || []).length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>${esc(t("time"))}</th><th>${esc(t("cls"))}</th><th class="num">${esc(t("share"))}</th><th class="num">${esc(t("conf"))}</th><th></th></tr></thead><tbody>
-      ${d.signals.slice().reverse().map((s) => `<tr><td>${esc(L$.fmtTime(s.timestamp))}</td><td>${esc(L$.hazard(s.hazard_class))}</td>
-        <td class="num">${L$.pct(s.blocked_share)}</td><td class="num" style="${s.confidence < 0.5 ? "color:var(--high);font-weight:700" : ""}">${(+s.confidence).toFixed(2)}</td>
-        <td>${s.frame_url ? `<a href="${esc(s.frame_url)}" data-zoom="${esc(s.frame_url)}">${esc(t("fullFrame"))}</a>` : ""}</td></tr>`).join("")}</tbody></table></div>` : "";
-    const hist = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>${esc(t("when"))}</th><th>${esc(t("to"))}</th><th>${esc(t("who"))}</th><th>${esc(t("note"))}</th></tr></thead><tbody>
-      ${(d.history || []).slice().reverse().map((h) => `<tr><td>${esc(L$.fmtTime(h.at))}</td><td>${L$.statusBadge(h.to_status)}</td><td>${esc(h.actor)}</td><td>${esc(h.note || "")}</td></tr>`).join("")}
-      </tbody></table></div>`;
+      </div>`).join("");
 
     const acts = [];
     if (d.status === "watch") acts.push(["open", t("actDispatch"), "primary"]);
@@ -522,33 +508,52 @@
     if (d.status === "done_reported") acts.push(["reopened", t("actDispute"), "bad"]);
     if (d.status === "verified" && d.opened_at) acts.push(["reopened", t("actReopenVerified"), "bad"]);
 
+    // the details an inspector rarely needs: closed by default
+    const reasons = (d.urgency_reasons || []).map((r) => `<li><span>${esc(L$.reasonText(r))}</span><span class="pts">${r.points != null ? "+" + r.points : ""}</span></li>`).join("");
+    const tl = [
+      [t("deadlineAt"), L$.fmtTime(d.deadline_at)],
+      [t("detected"), L$.fmtTime(d.detected_at)],
+      [t("opened"), L$.fmtTime(d.notified_at)],
+      [t("doneReported"), L$.fmtTime(d.done_reported_at)],
+      [t("verified"), L$.fmtTime(d.verified_at)],
+      [t("responseTime"), d.response_hours != null ? `${L$.hours(d.response_hours)} ${t("h")}` : t("none")],
+      [t("notifyDelay"), d.notify_seconds != null ? L$.fmtDur(d.notify_seconds) : t("none")],
+      [t("reopenedTimes"), `${d.reopened_count} ${t("times")}`],
+    ].map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+    const sigs = (d.signals || []).length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>${esc(t("time"))}</th><th>${esc(t("cls"))}</th><th class="num">${esc(t("share"))}</th><th class="num">${esc(t("conf"))}</th><th></th></tr></thead><tbody>
+      ${d.signals.slice().reverse().map((s) => `<tr><td>${esc(L$.fmtTime(s.timestamp))}</td><td>${esc(L$.hazard(s.hazard_class))}</td>
+        <td class="num">${L$.pct(s.blocked_share)}</td><td class="num">${(+s.confidence).toFixed(2)}</td>
+        <td>${s.frame_url ? `<a href="${esc(s.frame_url)}" data-zoom="${esc(s.frame_url)}">${esc(t("fullFrame"))}</a>` : ""}</td></tr>`).join("")}</tbody></table></div>` : "";
+    const hist = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>${esc(t("when"))}</th><th>${esc(t("to"))}</th><th>${esc(t("who"))}</th><th>${esc(t("note"))}</th></tr></thead><tbody>
+      ${(d.history || []).slice().reverse().map((h) => `<tr><td>${esc(L$.fmtTime(h.at))}</td><td>${esc(t("st_" + h.to_status))}</td><td>${esc(h.actor)}</td><td>${esc(h.note || "")}</td></tr>`).join("")}
+      </tbody></table></div>`;
+
     return `<div class="card">
-      <button class="btn card-back" type="button" id="cardBack">← ${esc(t("back"))}</button>
-      <section>
-        <h2>${esc(t("alert"))} #${d.id} ${L$.statusBadge(d.status)} ${L$.levelBadge(d.urgency_level, d.status)}
-          ${d.flagged_for_council ? `<span class="chip purple">⚑ ${esc(t("flagCouncil"))}</span>` : ""}
-          ${d.false_alarm ? `<span class="chip">${esc(t("falseAlarm"))}</span>` : ""}</h2>
-        <div class="muted">${esc(L$.place(d.place_type))} · ${esc(t("district"))}: ${esc(d.district || t("none"))} · ${esc(t("contractorL"))}: ${esc(d.contractor_name || t("none"))}</div>
-        <div class="muted small">${d.zone_id ? `${esc(t("zone"))}: ${esc(d.zone_id)}` : esc(t("reportOnly"))} · ${esc(t("hz_" + (d.hazard_now || "other")))}</div>
+      <button class="btn link card-back" type="button" id="cardBack">← ${esc(t("backToList"))}</button>
+      <section class="case-head">
+        <div class="case-no">${esc(t("caseNo"))} ${d.id}</div>
+        <h2>${esc(L$.place(d.place_type))}, ${esc(d.district || t("none"))}</h2>
+        <div class="status-line">${L$.statusBadge(d.status)}${d.false_alarm ? `<span class="flag">${esc(t("falseAlarm"))}</span>` : ""}${d.flagged_for_council ? `<span class="flag">${esc(t("flagCouncil"))}</span>` : ""}${flags.map(flagHTML).join("")}</div>
         ${d.status === "watch" ? `<div class="note-box">${esc(t("watchNote"))}</div>` : ""}
         ${d.status === "cleared_in_time" ? `<div class="note-box">${esc(t("clearedNote"))}</div>` : ""}
-        ${flags.length ? `<div style="margin-top:8px">${flags.map((f) => `<span class="chip ${f === "possible_ice" || f === "ice_report" ? "alarm" : "warn"}">${esc(t("why_" + f))}</span>`).join("")}</div>` : ""}
+        <dl class="facts">${facts}</dl>
+      </section>
+      ${photos ? `<section><h3>${esc(t("evidence"))}</h3>${photos}</section>` : ""}
+      <section><h3>${esc(t("decision"))}</h3>
+        ${acts.length ? `<textarea id="actNote" class="field" maxlength="500" placeholder="${esc(t("noteLabel"))}" aria-label="${esc(t("noteLabel"))}"></textarea>
+        <div class="actions">${acts.map(([s, label, cls]) => `<button class="btn ${cls}" type="button" data-act="${s}">${esc(label)}</button>`).join("")}</div>
+        <div class="err" id="actErr" role="alert"></div>` : `<p class="muted small">${esc(t("noDecision"))}</p>`}
+        ${d.evidence_url ? `<p class="small" style="margin:10px 0 0"><a href="${esc(d.evidence_url)}&lang=${esc(L$.lang)}" target="_blank" rel="noopener" title="${esc(t("evidenceHint"))}">${esc(t("evidencePack"))}</a> · <span class="muted">${esc(t("evidenceHint"))}</span></p>` : ""}
       </section>
       ${warnHTML(d)}
-      <section><h3>${esc(t("why"))} · ${esc(t("urgency"))} ${d.urgency_score}</h3><ul class="reasons">${reasons || `<li class="muted">${esc(t("none"))}</li>`}</ul></section>
-      <section><h3>${esc(t("actions"))}</h3>
-        <div class="actions">
-          <textarea id="actNote" maxlength="500" placeholder="${esc(t("noteLabel"))}" aria-label="${esc(t("noteLabel"))}"></textarea>
-          ${acts.map(([s, label, cls]) => `<button class="btn ${cls}" type="button" data-act="${s}">${esc(label)}</button>`).join("")}
-          ${d.evidence_url ? `<a class="btn" href="${esc(d.evidence_url)}&lang=${esc(L$.lang)}" target="_blank" rel="noopener" title="${esc(t("evidenceHint"))}">${esc(t("evidencePack"))}</a>` : ""}
-        </div>
-        <div class="err" id="actErr" role="alert"></div>
-      </section>
-      <section><h3>${esc(t("evidence"))}</h3>${ba}</section>
-      <section><h3>${esc(t("timeline"))}</h3><dl class="timeline">${tl}</dl></section>
-      <section><h3>${esc(t("reports"))} (${d.report_count})</h3>${reps}</section>
-      ${sigs ? `<section><h3>${esc(t("signals"))} (${d.signals.length})</h3>${sigs}</section>` : ""}
-      <section><h3>${esc(t("history"))}</h3>${hist}</section>
+      ${reps ? `<section><h3>${esc(t("reports"))} (${d.report_count})</h3><div class="photos">${reps}</div></section>` : ""}
+      <details class="more" id="more" ${S.moreOpen ? "open" : ""}><summary>${esc(t("moreDetails"))}</summary>
+        <h4>${esc(t("timeline"))}</h4><dl class="timeline">${tl}</dl>
+        <h4>${esc(t("why"))}</h4><ul class="reasons">${reasons || `<li class="muted">${esc(t("none"))}</li>`}</ul>
+        ${sigs ? `<h4>${esc(t("signals"))} (${d.signals.length})</h4>${sigs}` : ""}
+        <h4>${esc(t("history"))}</h4>${hist}
+        ${d.zone_id ? `<p class="small muted">${esc(t("zone"))}: ${esc(d.zone_id)}</p>` : ""}
+      </details>
     </div>`;
   }
 
@@ -558,7 +563,7 @@
     const sent = (d.warnings || []).map((w) => `<li><span class="when">${esc(L$.fmtTime(w.at))}</span><span>${esc(w.message)}</span></li>`).join("");
     return `<section><h3>${esc(t("warnTitle"))}${d.contractor_name ? ` · ${esc(d.contractor_name)}` : ""}</h3>
       ${can ? `<div class="warn-form">
-          <textarea id="warnMsg" maxlength="500" placeholder="${esc(t("warnPlaceholder"))}" aria-label="${esc(t("warnTitle"))}"></textarea>
+          <textarea id="warnMsg" class="field" maxlength="500" placeholder="${esc(t("warnPlaceholder"))}" aria-label="${esc(t("warnTitle"))}"></textarea>
           <div class="actions"><button class="btn primary" type="button" id="warnSend">${esc(t("warnSend"))}</button></div>
           <div class="err" id="warnErr" role="alert"></div>
         </div>` : `<p class="muted small">${esc(t("warnNotYet"))}</p>`}
@@ -588,6 +593,8 @@
   }
 
   function bindCard(el) {
+    const more = el.querySelector("#more");
+    if (more) more.addEventListener("toggle", () => { S.moreOpen = more.open; });
     const back = el.querySelector("#cardBack");
     if (back) back.addEventListener("click", () => { S.selected = null; S.detail = null; S.rendered.panel = null; renderTabs(); renderPanel(); updateMap(); });
     const send = el.querySelector("#warnSend");

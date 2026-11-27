@@ -66,9 +66,9 @@
     // the inspector's written warnings (newest first) are the first thing on the job
     const warns = a.status !== "verified" && (a.warnings || []).length ? `<div class="banner warning"><b>${esc(t("warnFromInspector"))}</b>${a.warnings
       .map((w) => `<div class="warn-line"><span class="when">${esc(L$.fmtTime(w.at))}</span> ${esc(w.message)}</div>`).join("")}</div>` : "";
-    const banner = warns + (a.overdue ? `<div class="banner overdue">⚠ ${esc(t("overdueJob"))}</div>` : "")
-      + (a.status === "reopened" ? `<div class="banner">↻ ${esc(t("redo"))}</div>`
-        : a.status === "done_reported" ? `<div class="banner done">⏳ ${esc(t("waitingCheck"))}</div>` : "");
+    const banner = warns + (a.overdue ? `<div class="banner overdue">${esc(t("overdueJob"))}</div>` : "")
+      + (a.status === "reopened" ? `<div class="banner">${esc(t("redo"))}</div>`
+        : a.status === "done_reported" ? `<div class="banner done">${esc(t("waitingCheck"))}</div>` : "");
     const open = a.status !== "verified";
     const photos = (a.report_photos || []).map((p) => `<img src="${esc(p)}" data-zoom="${esc(p)}" alt="${esc(t("residentPhotos"))}" loading="lazy">`).join("");
     const canClear = a.status === "open" || a.status === "reopened";
@@ -83,18 +83,18 @@
       ${banner}
       <div class="body">
         <div class="top">
-          <div><h2>${esc(L$.place(a.place_type))} · #${a.id}</h2>
-            <div class="muted small">${esc(a.district || "")}${a.hazard_now && a.hazard_now !== "reported" ? ` · ${esc(L$.hazard(a.hazard_now))}` : ""}</div></div>
+          <div><h2>${esc(L$.place(a.place_type))}, ${esc(a.district || "")}</h2>
+            <div class="muted small">${esc(t("caseNo"))} ${a.id}${a.hazard_now && a.hazard_now !== "reported" ? ` · ${esc(L$.hazard(a.hazard_now))}` : ""}</div></div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">${L$.levelBadge(a.urgency_level, a.status)}${L$.statusBadge(a.status)}</div>
         </div>
         ${a.latest_crop_url ? `<figure style="margin:0"><img class="crop" src="${esc(a.latest_crop_url)}" data-zoom="${esc(a.latest_crop_url)}" alt="${esc(t("lastFrame"))}" loading="lazy"><figcaption class="muted small">${esc(t("lastFrame"))}</figcaption></figure>` : ""}
         <div class="facts">${facts}</div>
         ${photos ? `<div><div class="muted small" style="margin-bottom:4px">${esc(t("residentPhotos"))}</div><div class="thumbs">${photos}</div></div>` : ""}
         <div class="links">
-          <a class="btn" href="${esc(osm(a))}" target="_blank" rel="noopener">🗺 ${esc(t("openInMap"))}</a>
-          <a class="btn" href="${esc(geo(a))}">➜ ${esc(t("directions"))}</a>
+          <a class="btn" href="${esc(osm(a))}" target="_blank" rel="noopener">${esc(t("openInMap"))}</a>
+          <a class="btn" href="${esc(geo(a))}">${esc(t("directions"))}</a>
         </div>
-        ${canClear ? `<button class="btn primary big" type="button" data-clear="${a.id}" ${S.busy.has(a.id) ? "disabled" : ""}>✓ ${esc(t("cleared"))}</button>` : ""}
+        ${canClear ? `<button class="btn primary big" type="button" data-clear="${a.id}" ${S.busy.has(a.id) ? "disabled" : ""}>${esc(t("cleared"))}</button>` : ""}
       </div>
     </article>`;
   }
@@ -180,7 +180,7 @@
       } else {
         l.marker.setStyle(style); l.marker.setRadius(style.radius); l.marker.setLatLng(dotAt(a));
       }
-      l.marker.bindTooltip(`#${a.id} · ${esc(L$.place(a.place_type))} · ${esc(t("st_" + a.status))}`);
+      l.marker.bindTooltip(`${esc(t("caseNo"))} ${a.id} · ${esc(L$.place(a.place_type))} · ${esc(t("st_" + a.status))}`);
     });
     S.layers.forEach((l, id) => { if (!seen.has(id)) { l.marker.remove(); S.layers.delete(id); } });
     showDots();

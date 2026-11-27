@@ -35,6 +35,15 @@ Open http://127.0.0.1:8000/inspector. API docs are at http://127.0.0.1:8000/docs
 
 On Windows, use `127.0.0.1` rather than `localhost`: `localhost` tries IPv6 first and adds about 2 s to every request.
 
+### What the inspector sees
+
+The screens use a plain public-service look: light only, a navy header with the service name and a **Prototype** label, white panels with thin borders, square corners, and no emoji. The footer says it is a prototype and not an official service. There is no coat of arms and no city or agency branding.
+
+- **Tabs:** Today's visits, All cases, Resident reports, Statistics (LV: Šodienas apsekošana, Visi gadījumi, Iedzīvotāju ziņojumi, Statistika). In Latvian an alert is a *gadījums* (case), so it does not clash with *brīdinājums* (the warning to the contractor).
+- **List row:** place and district, "No. X · contractor · camera · time ago", the status tag, and only the flags worth a glance (overdue, high urgency, possible ice, complaint without a camera, report to review, problem place).
+- **Case card:** case number, place and district, status, then contractor, fix-by time, who detected it, first seen and the situation. Below that come the photos, the **inspector's decision** (note, buttons, evidence package), the **warning to the contractor**, and the resident reports.
+- **More details** is closed by default and stays as you left it between refreshes. It holds the timeline, why this urgency (points), the camera signals with confidences, the status history and the camera zone id. Coordinates are not shown anywhere: the map point is enough.
+
 ### Demo: the 25.11 day from brief v3
 
 Unzip the mock archive into the repo root so that `mock/` exists. The images in `mock/frames|crops|photos` are gitignored and must never be committed. Then, with the app running:
@@ -78,7 +87,7 @@ Everything lives in [engine.py](engine.py); the deadline table is in [rules.py](
 - **Statuses.** `watch → open → done_reported → verified`, plus `cleared_in_time`, and `reopened` when the camera still sees snow after "done" or the inspector disputes it. A clear frame closes the alert, not the button: `verified` works without "done" too. Every status or severity change is written to `status_history` with who and when; that history is part of the evidence package.
 - **Warning to the contractor (instead of a fine).** On an alert the contractor has (`open`, `done_reported`, `reopened`), the inspector writes a message in a text box and presses **Send warning**. The contractor sees it at the top of that job ("Warning from the inspector", with the time), and it goes to the status history, so it is part of the evidence package. `POST /alerts/{id}/warning {"role": "inspector", "actor", "message"}` (1–500 characters); a watch or closed alert answers 409. Every alert carries `warnings` (newest first).
 - **Check list (`/inspection/today`, 08:30–17:00).** Suggested acts first (not shown as such), then overdue `fix_due_at`, complaints without a camera, problem places (reopened within 30 days), then urgency.
-- **KPIs.** Response time = `verified_at − notified_at`. Per contractor: average, share closed within 24 h, reopened, overdue. The **Response times** tab starts with the three challenge KPIs (`kpi` in `/stats/response`):
+- **KPIs.** Response time = `verified_at − notified_at`. Per contractor: average, share closed within 24 h, reopened, overdue. The **Statistics** tab starts with the three challenge KPIs (`kpi` in `/stats/response`):
   - **KPI 1, false alarms per camera hour:** jobs the inspector closed with **False alarm (no snow)** (`POST /alerts/{id}/status {"status": "verified", "false_alarm": true}`, inspector only), divided by hours of camera work (first to last signal of each camera). False alarms are left out of the contractors' response times.
   - **KPI 2, notification ≤ 15 min:** `notified_at − max(detected_at, deadline_at)`, over all jobs.
   - **KPI 3, exact location:** share of signals with a point (camera signals always; resident reports that are not rejected and have a map point).
@@ -89,7 +98,7 @@ Everything lives in [engine.py](engine.py); the deadline table is in [rules.py](
 - **Zoom levels on both maps.** *Far away* (zoom < 16): **only the coloured sidewalk lines**, as in pGIS. There are no dots and no count bubbles. *Close up* (zoom ≥ 16, a few streets on screen): every alert's dot on its line. *Block view* (zoom ≥ 17): the camera positions too. Picking an alert in the list flies in to it, so its dot shows (`DOT_ZOOM` in `common.js`). **No camera rectangles** on the inspector or contractor map: a camera zone's rectangle is drawn on the image, so on the map it lands on buildings. A camera alert is shown by its stretch of sidewalk or square and a dot, and the dot is **snapped onto the line** (the nearest drawn block within 40 m; `map_point` in the alert, `points` in `/map/status`), so it is not on a roof where the zone's centre fell. Resident dots are snapped onto their line too (within 25 m); a report with no line nearby stays at its exact spot. The zone stays on the evidence package, where it is what the camera measured.
 - **Cameras.** `config/cameras.json` (vision side) is read first; `mock/cameras_mock.json` adds the demo cameras it does not define, so the mock demo keeps working once the Finnish cameras land. `source: skyfinder` cameras are never shown. Cameras with `"active": false` (Lahti; Oulu is back on since Nikita's 25.11 model, with a crossing zone) are switched off: not on the map, no zones, and their signals are stored but never make an alert (`{"alert_id": null}`). The first file that lists a camera wins, including when it switches it off.
 - **Privacy.** The contractor and export responses are filtered on the server: no `frame_url`, no evidence link, no device ids and no low-confidence frames. The evidence package answers `403` to `role=contractor` and never contains device ids. `frame_url` may be an absolute `http://localhost:8001/media/...` link (real camera) or a relative `/static/...` one (mocks); both work.
-- **Analysis.** `/analyze` gets a 10 s timeout; on timeout or error the report goes to `review`. While `ANALYZE_URL` is empty, a stub answers `accept`, so the irrelevant-photo report is accepted until the model is connected. `reject` reports are stored but never become alerts, and the inspector can still rescue one from the Reports tab.
+- **Analysis.** `/analyze` gets a 10 s timeout; on timeout or error the report goes to `review`. While `ANALYZE_URL` is empty, a stub answers `accept`, so the irrelevant-photo report is accepted until the model is connected. `reject` reports are stored but never become alerts, and the inspector can still rescue one from the Resident reports tab.
 
 ## Spam protection
 
@@ -103,7 +112,7 @@ The rules are in [spam.py](spam.py). They cover every channel (web form, Telegra
 | Too many reports from one network (web form) | 30 per hour | `429`. This backstops spammers who clear their cookies. |
 | Outside the service area | Riga bounding box | `422 outside_area` |
 | Auto-mute | 3 rejected photos or 5 repeats in 24 h | Sender blocked for 24 h |
-| Inspector | "Block sender" / "Unblock" in the Reports tab | Manual block, plus a 24 h summary of what was refused |
+| Inspector | "Block sender" / "Unblock" in the Resident reports tab | Manual block, plus a 24 h summary of what was refused |
 
 **Identity.** Telegram (and later WhatsApp) sends a stable hashed user id. The web form gets a random cookie, and only trusted callers (`TRUSTED_HOSTS`, or the `INTERNAL_API_KEY` header) may name their own `device_id`. IPs are stored only as salted hashes. All limits are in `.env`.
 

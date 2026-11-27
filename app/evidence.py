@@ -100,7 +100,7 @@ body {{ font:14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 h1 {{ font-size:22px; margin:0 0 4px; }}
 h2 {{ font-size:16px; margin:24px 0 8px; border-bottom:1px solid var(--line); padding-bottom:4px; }}
 .muted {{ color:var(--muted); }} .small {{ font-size:12px; }}
-.tag {{ display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px; font-weight:600; background:#eef1f5; margin-left:6px; }}
+.tag {{ display:inline-block; padding:1px 7px; border-radius:2px; font-size:12px; font-weight:600; background:#eef1f5; margin-left:6px; }}
 .tag.act {{ background:#f3e5f5; color:var(--act); }} .tag.red {{ background:#fdecea; color:var(--red); }}
 .grid {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }}
 @media (max-width:700px) {{ .grid {{ grid-template-columns:1fr; }} }}

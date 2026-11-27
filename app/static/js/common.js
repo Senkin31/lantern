@@ -5,19 +5,24 @@
   const I18N = {
     en: {
       inspector: "Inspector", contractor: "Contractor", role: "View as", residentForm: "Resident form",
+      serviceSub: "Winter sidewalk maintenance supervision", prototype: "Prototype",
+      protoNote: "Prototype made at RobotHack 2026. Not an official service of any authority.",
       source: "Source", loading: "Loading…", retry: "Retry",
       // demo bar
       demo: "Demo", snowfallEnd: "Snowfall", deadline: "Clearing deadline", notSet: "not set",
       rigaTime: "Riga time", demoClock: "demo clock ×{f}", snowingSince: "snowing since {t}", snowEnded: "ended {t}",
       snowUnknown: "unknown (08:00 rule)", passed: "passed", in: "in",
       btnSnowStart: "Snowfall started", btnSnowfall: "Snowfall ended now", btnReset: "Reset demo",
-      confirmReset: "Delete all alerts, signals, reports, snowfalls and history? The demo clock is kept.",
+      confirmReset: "Delete all cases, signals, reports, snowfalls and history? The demo clock is kept.",
       deadlineRule: "Regulation RD-24-270-sn: snowfall ended before 08:00 → 08:00, 08:00–22:00 → 22:00, after 22:00 → 08:00 next day.",
       // tabs
-      tabToday: "Where to go today", tabAll: "All alerts", tabReports: "Reports", tabStats: "Response times",
+      tabToday: "Today's visits", tabAll: "All cases", tabReports: "Resident reports", tabStats: "Statistics",
       todayHint: "Check list for {h}, most urgent first: overdue fixes, complaints without a camera, problem places (reopened within 30 days).",
       allStatuses: "All statuses", activeOnly: "Active only",
-      nothingToday: "Nothing needs a visit right now.", noAlerts: "No alerts yet.",
+      nothingToday: "Nothing needs a visit right now.", noAlerts: "No cases yet.",
+      caseNo: "Case No.", caseShort: "No.", reportNo: "Report No.", backToList: "Back to the list", srcCamera: "camera", srcResidents: "residents",
+      nReports: "{n} report(s)", detectedBy: "Detected by", situation: "Situation", decision: "Inspector's decision",
+      noDecision: "The case is closed.", moreDetails: "More details: timeline, urgency, camera data, history", closedL: "Closed",
       // statuses
       st_watch: "Watch", st_cleared_in_time: "Cleared in time", st_open: "Open", st_done_reported: "Done reported", st_verified: "Verified", st_reopened: "Reopened",
       sev_act: "Defect act", sev_notice: "Notice", sevTitle: "Response level", sevSuggested: "suggested: {s}", sevManual: "set by inspector",
@@ -47,7 +52,7 @@
       r_confirmations: "{count} confirmation(s) from other sources", r_cap_unconfirmed: "Single unconfirmed report: capped at medium",
       lowConfTag: "conf. {c}",
       // card
-      back: "Back", alert: "Alert", urgency: "Urgency", score: "score", why: "Why this urgency", flags: "Needs your attention",
+      back: "Back", alert: "Case", urgency: "Urgency", score: "score", why: "Why this urgency", flags: "Needs your attention",
       where: "Where", district: "District", contractorL: "Contractor", none: "—", zone: "Camera zone", reportOnly: "Resident reports only (no camera)",
       timeline: "Timeline", firstSeen: "First seen", detected: "Violation detected", opened: "Sent to contractor",
       doneReported: "Contractor: done", verified: "Verified", responseTime: "Response time", notifyDelay: "Notification delay",
@@ -83,18 +88,18 @@
       kpi2: "Reached the contractor in ≤ {n} min", kpi2Sub: "{a} of {b} jobs",
       kpi3: "Signals with an exact location", kpi3Sub: "{a} of {b} (cameras always, reports with a map point)",
       actFalse: "False alarm (no snow)", falseAlarm: "False alarm", byAi: "AI, from the photo",
-      flag_approx_location: "📍 Place picked or typed, not GPS", flagTip_approx_location: "Alone it does not send the contractor: needs GPS, a camera or a second person",
-      flag_not_street_photo: "🖥 Looks like a screenshot or webcam", flagTip_not_street_photo: "The AI's note says this is not a photo taken on the street",
-      flag_false_alarm_sender: "⚠ Sender had false alarms", flagTip_false_alarm_sender: "Earlier reports from this sender were closed as false alarms",
+      flag_approx_location: "Place picked or typed, not GPS", flagTip_approx_location: "Alone it does not send the contractor: needs GPS, a camera or a second person",
+      flag_not_street_photo: "Looks like a screenshot or webcam", flagTip_not_street_photo: "The AI's note says this is not a photo taken on the street",
+      flag_false_alarm_sender: "Sender had false alarms", flagTip_false_alarm_sender: "Earlier reports from this sender were closed as false alarms",
       logout: "Log out",
-      flag_coarse_location: "📡 Rough phone location", flagTip_coarse_location: "The phone gave its position only to wifi or cell-tower accuracy (worse than GPS)",
-      flag_picked_photo: "🗂 Photo from the file dialog", flagTip_picked_photo: "The in-app camera did not open, so the phone's file dialog was used: it could be an older photo. Waits for the inspector",
-      capture_live: "📷 Taken live in the Telegram app", captureTip_live: "Photo taken in the app's own camera just now, at the phone's GPS position",
+      flag_coarse_location: "Rough phone location", flagTip_coarse_location: "The phone gave its position only to wifi or cell-tower accuracy (worse than GPS)",
+      flag_picked_photo: "Photo from the file dialog", flagTip_picked_photo: "The in-app camera did not open, so the phone's file dialog was used: it could be an older photo. Waits for the inspector",
+      capture_live: "Taken live in the Telegram app", captureTip_live: "Photo taken in the app's own camera just now, at the phone's GPS position",
       sectionLegend: "Street section or square (camera or 2+ residents)", sectionNoName: "Unnamed street", squareL: "square",
       bubbleLegend: "Several alerts close together", bubbleTip: "{n} alerts here: click to zoom in",
-      net_title: "Sidewalks (as in Riga's pGIS)", net_none: "No task", net_registered: "Registered: to clean (open, reopened)",
-      net_started: "Started: deadline running or cleaned, to check", net_finished: "Finished: cleaned and confirmed",
-      net_on: "Sidewalk lines", legendDots: "Alerts (dots)", dotsZoomNote: "Dots appear when you zoom in",
+      net_title: "Sidewalks (pGIS)", net_none: "No task", net_registered: "Registered: to be cleaned",
+      net_started: "Started: to be checked", net_finished: "Finished",
+      net_on: "Sidewalk lines", legendDots: "Cases (colour = urgency)", dotsZoomNote: "Points appear when you zoom in",
       exportGeo: "Export GeoJSON", exportCsv: "Export CSV", noStats: "No alerts have been sent to contractors yet.",
       // contractor
       myJobs: "My jobs", listView: "List", mapView: "Map", toDo: "To do", waiting: "Waiting for check", doneToday: "Verified",
@@ -110,24 +115,29 @@
     },
     lv: {
       inspector: "Inspektors", contractor: "Darbuzņēmējs", role: "Skatīt kā", residentForm: "Iedzīvotāju forma",
+      serviceSub: "Ietvju ziemas uzturēšanas uzraudzība", prototype: "Prototips",
+      protoNote: "Prototips, izveidots RobotHack 2026. Nav nevienas iestādes oficiāls pakalpojums.",
       source: "Pirmkods", loading: "Ielādē…", retry: "Mēģināt vēlreiz",
       demo: "Demo", snowfallEnd: "Snigšana", deadline: "Tīrīšanas termiņš", notSet: "nav iestatīts",
       rigaTime: "Rīgas laiks", demoClock: "demo pulkstenis ×{f}", snowingSince: "snieg kopš {t}", snowEnded: "beidzās {t}",
       snowUnknown: "nav zināms (08:00 noteikums)", passed: "pagājis", in: "pēc",
       btnSnowStart: "Sāka snigt", btnSnowfall: "Snigšana beigusies tagad", btnReset: "Atiestatīt demo",
-      confirmReset: "Dzēst visus brīdinājumus, signālus, ziņojumus, snigšanas un vēsturi? Demo pulkstenis paliks.",
+      confirmReset: "Dzēst visus gadījumus, signālus, ziņojumus, snigšanas un vēsturi? Demo pulkstenis paliks.",
       deadlineRule: "Noteikumi RD-24-270-sn: snigšana beidzās pirms 08:00 → 08:00, 08:00–22:00 → 22:00, pēc 22:00 → 08:00 nākamajā dienā.",
-      tabToday: "Kur doties šodien", tabAll: "Visi brīdinājumi", tabReports: "Ziņojumi", tabStats: "Reakcijas laiks",
+      tabToday: "Šodienas apsekošana", tabAll: "Visi gadījumi", tabReports: "Iedzīvotāju ziņojumi", tabStats: "Statistika",
       todayHint: "Pārbaužu saraksts {h}, steidzamākie vispirms: nokavētie labojumi, sūdzības bez kameras, problēmvietas (atkārtoti atvērtas 30 dienās).",
       allStatuses: "Visi statusi", activeOnly: "Tikai aktīvie",
-      nothingToday: "Šobrīd nekur nav jābrauc.", noAlerts: "Brīdinājumu vēl nav.",
+      nothingToday: "Šobrīd nekur nav jābrauc.", noAlerts: "Gadījumu vēl nav.",
+      caseNo: "Gadījums Nr.", caseShort: "Nr.", reportNo: "Ziņojums Nr.", backToList: "Atpakaļ uz sarakstu", srcCamera: "kamera", srcResidents: "iedzīvotāji",
+      nReports: "ziņojumi: {n}", detectedBy: "Konstatēja", situation: "Situācija", decision: "Inspektora lēmums",
+      noDecision: "Gadījums ir slēgts.", moreDetails: "Sīkāka informācija: laika līnija, steidzamība, kameras dati, vēsture", closedL: "Slēgts",
       st_watch: "Novērošanā", st_cleared_in_time: "Notīrīts laikā", st_open: "Atvērts", st_done_reported: "Ziņots: notīrīts", st_verified: "Pārbaudīts", st_reopened: "Atvērts atkārtoti",
       sev_act: "Defektu akts", sev_notice: "Vēstule", sevTitle: "Reakcijas līmenis", sevSuggested: "ieteikums: {s}", sevManual: "iestatīja inspektors",
       sevToAct: "Pārvērst par defektu aktu", sevToNotice: "Pārvērst par vēstuli", sevNote: "Tikai ieteikums: aktu sastāda cilvēks. Abos līmeņos 24 h labošanai.",
       fixDue: "Novērst līdz", overdue: "Nokavēts", fixLeft: "atlikušas {d}", evidencePack: "Pierādījumu pakete", evidenceHint: "Viena drukājama lapa: vieta, termiņš, kadri pēc termiņa, foto, vēsture.",
       deadlineAt: "Tīrīšanas termiņš", regNo: "Domes reģ. nr.",
       lv_high: "Augsta", lv_medium: "Vidēja", lv_low: "Zema",
-      watchNote: "Tīrīšanas termiņš vēl nav beidzies. Darbuzņēmējs šo brīdinājumu neredz.",
+      watchNote: "Tīrīšanas termiņš vēl nav beidzies. Darbuzņēmējs šo gadījumu neredz.",
       clearedNote: "Tīrs kadrs pirms termiņa: notīrīts laikā, slēgts. Darbuzņēmējs to neredzēja.",
       why_reopened: "Atvērts atkārtoti", why_check_done: "Pārbaudīt “notīrīts”", why_possible_ice: "Iespējams ledus",
       why_low_confidence: "Neskaidrs kadrs", why_ice_report: "Iedzīvotājs: ledus / lāstekas",
@@ -145,7 +155,7 @@
       r_place: "Vieta: {value}", r_near_sensitive: "Blakus skola vai slimnīca",
       r_confirmations: "{count} apstiprinājums(-i) no citiem avotiem", r_cap_unconfirmed: "Viens neapstiprināts ziņojums: ne augstāk par vidēju",
       lowConfTag: "ticam. {c}",
-      back: "Atpakaļ", alert: "Brīdinājums", urgency: "Steidzamība", score: "punkti", why: "Kāpēc šāda steidzamība", flags: "Jāpievērš uzmanība",
+      back: "Atpakaļ", alert: "Gadījums", urgency: "Steidzamība", score: "punkti", why: "Kāpēc šāda steidzamība", flags: "Jāpievērš uzmanība",
       where: "Kur", district: "Rajons", contractorL: "Darbuzņēmējs", none: "—", zone: "Kameras zona", reportOnly: "Tikai iedzīvotāju ziņojumi (bez kameras)",
       timeline: "Laika līnija", firstSeen: "Pirmoreiz redzēts", detected: "Pārkāpums konstatēts", opened: "Nosūtīts darbuzņēmējam",
       doneReported: "Darbuzņēmējs: notīrīts", verified: "Pārbaudīts", responseTime: "Reakcijas laiks", notifyDelay: "Paziņošanas aizkave",
@@ -179,18 +189,18 @@
       kpi2: "Darbuzņēmējs saņēma ≤ {n} min", kpi2Sub: "{a} no {b} darbiem",
       kpi3: "Signāli ar precīzu vietu", kpi3Sub: "{a} no {b} (kameras vienmēr, ziņojumi ar punktu kartē)",
       actFalse: "Viltus trauksme (nav sniega)", falseAlarm: "Viltus trauksme", byAi: "MI, pēc foto",
-      flag_approx_location: "📍 Vieta izvēlēta vai ierakstīta, nav GPS", flagTip_approx_location: "Viena pati nenosūta darbuzņēmēju: vajag GPS, kameru vai otru cilvēku",
-      flag_not_street_photo: "🖥 Izskatās pēc ekrānuzņēmuma vai tīmekļa kameras", flagTip_not_street_photo: "MI piezīme saka, ka foto nav uzņemts uz ielas",
-      flag_false_alarm_sender: "⚠ Sūtītājam bijušas viltus trauksmes", flagTip_false_alarm_sender: "Iepriekšējie šī sūtītāja ziņojumi slēgti kā viltus trauksme",
+      flag_approx_location: "Vieta izvēlēta vai ierakstīta, nav GPS", flagTip_approx_location: "Viena pati nenosūta darbuzņēmēju: vajag GPS, kameru vai otru cilvēku",
+      flag_not_street_photo: "Izskatās pēc ekrānuzņēmuma vai tīmekļa kameras", flagTip_not_street_photo: "MI piezīme saka, ka foto nav uzņemts uz ielas",
+      flag_false_alarm_sender: "Sūtītājam bijušas viltus trauksmes", flagTip_false_alarm_sender: "Iepriekšējie šī sūtītāja ziņojumi slēgti kā viltus trauksme",
       logout: "Iziet",
-      flag_coarse_location: "📡 Aptuvena tālruņa atrašanās vieta", flagTip_coarse_location: "Tālrunis noteica vietu tikai pēc wifi vai mobilā torņa (sliktāk nekā GPS)",
-      flag_picked_photo: "🗂 Foto no failu izvēles", flagTip_picked_photo: "Lietotnes kamera neatvērās, tāpēc izmantota tālruņa failu izvēle: foto var būt vecāks. Gaida inspektoru",
-      capture_live: "📷 Uzņemts tieši Telegram lietotnē", captureTip_live: "Foto uzņemts lietotnes kamerā tikko, tālruņa GPS vietā",
+      flag_coarse_location: "Aptuvena tālruņa atrašanās vieta", flagTip_coarse_location: "Tālrunis noteica vietu tikai pēc wifi vai mobilā torņa (sliktāk nekā GPS)",
+      flag_picked_photo: "Foto no failu izvēles", flagTip_picked_photo: "Lietotnes kamera neatvērās, tāpēc izmantota tālruņa failu izvēle: foto var būt vecāks. Gaida inspektoru",
+      capture_live: "Uzņemts tieši Telegram lietotnē", captureTip_live: "Foto uzņemts lietotnes kamerā tikko, tālruņa GPS vietā",
       sectionLegend: "Ielas posms vai laukums (kamera vai 2+ iedzīvotāji)", sectionNoName: "Iela bez nosaukuma", squareL: "laukums",
-      bubbleLegend: "Vairāki brīdinājumi tuvu", bubbleTip: "Šeit {n} brīdinājumi: klikšķini, lai pietuvinātu",
-      net_title: "Ietves (kā Rīgas pGIS)", net_none: "Nav uzdevuma", net_registered: "Reģistrēts: jātīra (atvērts, atkārtoti atvērts)",
-      net_started: "Uzsākts: termiņš rit vai notīrīts, jāpārbauda", net_finished: "Pabeigts: notīrīts un apstiprināts",
-      net_on: "Ietvju līnijas", legendDots: "Brīdinājumi (punkti)", dotsZoomNote: "Punkti parādās, kad pietuvina",
+      bubbleLegend: "Vairāki gadījumi tuvu", bubbleTip: "Šeit {n} gadījumi: klikšķini, lai pietuvinātu",
+      net_title: "Ietves (pGIS)", net_none: "Nav uzdevuma", net_registered: "Reģistrēts: jātīra",
+      net_started: "Uzsākts: jāpārbauda", net_finished: "Pabeigts",
+      net_on: "Ietvju līnijas", legendDots: "Gadījumi (krāsa = steidzamība)", dotsZoomNote: "Punkti parādās, kad pietuvina",
       exportGeo: "Eksportēt GeoJSON", exportCsv: "Eksportēt CSV", noStats: "Darbuzņēmējiem vēl nekas nav nosūtīts.",
       myJobs: "Mani darbi", listView: "Saraksts", mapView: "Karte", toDo: "Jādara", waiting: "Gaida pārbaudi", doneToday: "Pārbaudīti",
       noJobs: "Jūsu rajonā šobrīd darbu nav.", completed: "Pabeigtie",
@@ -337,8 +347,6 @@
   }
 
   // ---------------------------------------------------------------- header / footer
-  const LOGO = `<svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="12" y="2" width="8" height="4" rx="1.5" fill="#f2a93b"/><path d="M9 9h14l-2 16H11z" fill="#f2a93b" opacity=".25"/><path d="M9 9h14l-2 16H11z" fill="none" stroke="#f2a93b" stroke-width="2" stroke-linejoin="round"/><circle cx="16" cy="17" r="3.4" fill="#f2a93b"/><rect x="8" y="26" width="16" height="3" rx="1.5" fill="#f2a93b"/></svg>`;
-
   function renderHeader(el, meta, current) {
     const opts = [`<option value="inspector" ${current === "inspector" ? "selected" : ""}>${esc(t("inspector"))}</option>`]
       .concat((meta.contractors || []).map((c) => {
@@ -346,7 +354,8 @@
         return `<option value="${esc(v)}" ${current === v ? "selected" : ""}>${esc(t("contractor"))}: ${esc(c.name)} (${esc((c.districts || []).join(", "))})</option>`;
       }));
     el.innerHTML = `
-      <a class="brand" href="/inspector">${LOGO}<span>Lantern</span></a>
+      <a class="brand" href="/inspector"><span class="brand-name">Lantern</span><span class="brand-sub">${esc(t("serviceSub"))}</span></a>
+      <span class="proto">${esc(t("prototype"))}</span>
       <span class="spacer"></span>
       <label for="roleSel">${esc(t("role"))}</label>
       <select id="roleSel" aria-label="${esc(t("role"))}">${opts.join("")}</select>
@@ -365,6 +374,7 @@
 
   function renderFooter(el, meta) {
     el.innerHTML = `
+      <span class="proto-note">${esc(t("protoNote"))}</span>
       <span>Map: ${meta.tile_attribution || "OpenStreetMap"}</span>
       <span>${esc(meta.images_credit || "")}</span>
       <a href="${esc(meta.source_url || "#")}" target="_blank" rel="noopener">${esc(t("source"))}</a>
@@ -401,7 +411,8 @@
   function makeMap(el, meta) {
     const map = L.map(el, { zoomControl: true, attributionControl: true }).setView([56.9515, 24.112], 15);
     L.tileLayer(meta.tile_url, { maxZoom: 19, attribution: meta.tile_attribution }).addTo(map);
-    if (window.ResizeObserver) new ResizeObserver(() => map.invalidateSize()).observe(el);
+    // a removed or not-yet-laid-out map throws inside Leaflet; a resize then is harmless to skip
+    if (window.ResizeObserver) new ResizeObserver(() => { try { map.invalidateSize(); } catch (e) { /* skip */ } }).observe(el);
     return map;
   }
   const toLatLngs = (poly) => (poly || []).map((p) => [p[1], p[0]]);

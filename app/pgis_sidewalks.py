@@ -43,14 +43,14 @@ R = 6378137.0
 
 def post(path: str, body: dict) -> dict:
     req = urllib.request.Request(f"{API}/{path}", data=json.dumps(body).encode(), method="POST",
-                                 headers={"Content-Type": "application/json", "User-Agent": "lantern-hackathon-app/0.1"})
+                                 headers={"Content-Type": "application/json", "User-Agent": "sidewalk-map-script/0.1"})
     with urllib.request.urlopen(req, timeout=60) as r:
         return json.load(r)
 
 
 def layer_names() -> dict:
     """classId -> layer (district) name, e.g. 13562 -> "Imanta"."""
-    req = urllib.request.Request(f"{API}/classifiers/layers", headers={"User-Agent": "lantern-hackathon-app/0.1"})
+    req = urllib.request.Request(f"{API}/classifiers/layers", headers={"User-Agent": "sidewalk-map-script/0.1"})
     with urllib.request.urlopen(req, timeout=60) as r:
         tree = json.load(r)
     names = {}

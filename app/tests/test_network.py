@@ -125,6 +125,17 @@ def test_an_alert_on_one_piece_colours_the_whole_pgis_object():
     assert network_status([alert(2, 56.95005, 24.1125, status="open")], w)["blocks"] == {}
 
 
+def test_a_maintained_line_inside_an_old_riga_zone_still_takes_its_alert():
+    zone = [[24.1095, 56.9495], [24.1160, 56.9495], [24.1160, 56.9510], [24.1095, 56.9510], [24.1095, 56.9495]]
+    line = {"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[24.1100, 56.95009], [24.1120, 56.95009]]},
+            "properties": {"id": "p7", "obj": "p7", "kind": "sidewalk", "source": "pgis"}}
+    area = {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [zone]},
+            "properties": {"id": "p9", "obj": "p9", "kind": "square", "source": "pgis", "name": "Vecrīgas zonējums"}}
+    w = Sidewalks([line, area])
+    assert w.nearest(56.95005, 24.1105, drawn_only=True)["id"] == "p7"       # 5 m from the line: the line
+    assert w.nearest(56.95040, 24.1150, drawn_only=True)["id"] == "p9"       # nowhere near it: the zone
+
+
 def test_network_is_revalidated_with_an_etag(make_client, tmp_path, monkeypatch):
     from app.main import settings
     f = tmp_path / "walks.geojson"

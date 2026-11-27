@@ -263,8 +263,13 @@ class Sidewalks:
 
     def nearest(self, lat: float, lon: float, max_m: float = SNAP_M, drawn_only: bool = False) -> Optional[dict]:
         sq = self.area_at(lat, lon)
-        if sq:
+        if sq and sq.get("source") != "pgis":
             return sq  # inside a square: the place is the whole square, not one line through it
+        # a pGIS zone (Old Riga) can have maintained lines inside it: a line in range wins, else the zone
+        line = self._nearest_line(lat, lon, max_m, drawn_only)
+        return line or sq
+
+    def _nearest_line(self, lat: float, lon: float, max_m: float, drawn_only: bool) -> Optional[dict]:
         drawn = self.drawn_ids() if drawn_only else None
         p = self.xy(lat, lon)
         cx, cy = int(p[0] // CELL_M), int(p[1] // CELL_M)

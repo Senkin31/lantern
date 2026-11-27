@@ -97,7 +97,7 @@ def squares(osm: dict) -> tuple:
 
 def fetch(bbox, q=None) -> dict:
     data = urllib.parse.urlencode({"data": q or query(bbox)}).encode()
-    req = urllib.request.Request(OVERPASS, data=data, headers={"User-Agent": "lantern-hackathon-app/0.1"})
+    req = urllib.request.Request(OVERPASS, data=data, headers={"User-Agent": "sidewalk-map-script/0.1"})
     with urllib.request.urlopen(req, timeout=120) as r:
         return json.load(r)
 

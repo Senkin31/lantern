@@ -300,6 +300,8 @@ class Engine:
             flags.append("approx_location")  # cannot send the contractor alone (see dispatchable)
         if r.get("capture") == "picker":
             flags.append("picked_photo")  # Mini App camera was unavailable: the phone's file dialog was used
+            if relevant == "accept":
+                relevant = "review"  # that dialog may offer the gallery: the inspector looks first
         if relevant == "accept" and (analysis.get("source") in ("screenshot", "webcam", "stock", "screen")
                                      or SECONDHAND.search(analysis.get("note") or "")):
             relevant = "review"

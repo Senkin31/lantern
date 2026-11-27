@@ -120,6 +120,17 @@ T = {
         "en": "We don't take photos from the chat: they can be old. Press «📸 Report a sidewalk» below and take the photo now.",
         "ru": "Фото из чата не принимаем: оно может быть старым. Нажмите «📸 Сообщить о тротуаре» ниже и сфотографируйте сейчас.",
     },
+    "help_app": {
+        "lv": "Kā ziņot: spied «📸 Ziņot par ietvi» → nofotografē vietu → Nosūtīt. Vietu pievieno tālrunis.\n\n"
+              "/start — jauns ziņojums\n/status — mani pieteikumi\n/lang — valoda\n\n"
+              "Steidzamos gadījumos zvani 1201 vai 112.",
+        "en": "How to report: press «📸 Report a sidewalk» → take the photo → Send. The phone adds the place.\n\n"
+              "/start — new report\n/status — my tickets\n/lang — language\n\n"
+              "In an emergency call 1201 or 112.",
+        "ru": "Как сообщить: нажмите «📸 Сообщить о тротуаре» → сфотографируйте → Отправить. Место добавит телефон.\n\n"
+              "/start — новое сообщение\n/status — мои заявки\n/lang — язык\n\n"
+              "В экстренных случаях звоните 1201 или 112.",
+    },
     "need_photo": {"lv": "Vispirms nosūti foto 📷", "en": "Please send a photo first 📷",
                    "ru": "Сначала пришлите фото 📷"},
     "need_location": {"lv": "Nosūti atrašanās vietu ar pogu zemāk 📍 vai ielīmē koordinātas / kartes saiti",

@@ -64,6 +64,7 @@ def test_rough_location_and_file_dialog_are_flagged(make_client):
     assert reps[rough["report_id"]]["loc_source"] == "coarse" and reps[rough["report_id"]]["flags"] == ["coarse_location"]
     assert reps[unknown["report_id"]]["loc_source"] == "coarse"
     assert reps[picked.json()["report_id"]]["flags"] == ["picked_photo"]
+    assert picked.json()["relevant"] == "review"  # the file dialog may offer the gallery: inspector first
 
 
 def test_bad_or_missing_pass_is_refused(make_client):

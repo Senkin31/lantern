@@ -84,6 +84,13 @@
   const video = $("video"), preview = $("preview"), camMsg = $("cam-msg"), shutter = $("shutter");
   const afterShot = $("after-shot"), sendBtn = $("send"), locBox = $("loc"), locRow = $("loc-row");
   let stream = null, shot = null, loc = null, sent = false, result = null;
+  // one small line for debugging on a real phone: platform, Telegram version, camera and location path
+  const diag = { cam: "…", loc: "…" };
+  function showDiag() {
+    $("diag").textContent = [tg ? `${tg.platform} · TG ${tg.version}` : "no Telegram", `cam: ${diag.cam}`,
+      `loc: ${diag.loc}`].join(" · ");
+  }
+  showDiag();
 
   if (tg) {
     tg.ready();
@@ -105,8 +112,10 @@
     locRow.hidden = cls !== "bad";
   }
 
-  function gotLocation(lat, lon, acc) {
+  function gotLocation(lat, lon, acc, via) {
     loc = { lat, lon, acc: acc == null ? null : Math.round(acc) };
+    diag.loc = `${via} ±${loc.acc == null ? "?" : loc.acc} m`;
+    showDiag();
     const m = loc.acc == null ? "?" : loc.acc;
     if (loc.acc != null && loc.acc <= 75) setLoc("ok", "loc_ok", { m });
     else setLoc("warn", "loc_rough", { m });
@@ -115,8 +124,8 @@
   function browserLocation(quiet) {
     if (!navigator.geolocation) { if (!quiet) setLoc("bad", "loc_denied"); return; }
     navigator.geolocation.getCurrentPosition(
-      (p) => gotLocation(p.coords.latitude, p.coords.longitude, p.coords.accuracy),
-      () => { if (!quiet || !loc) setLoc("bad", "loc_denied"); },
+      (p) => gotLocation(p.coords.latitude, p.coords.longitude, p.coords.accuracy, "browser"),
+      (e) => { diag.loc = `browser error ${e && e.code}`; showDiag(); if (!quiet || !loc) setLoc("bad", "loc_denied"); },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
   }
 
@@ -128,8 +137,8 @@
     const go = () => {
       if (!lm.isLocationAvailable) return browserLocation(quiet);
       lm.getLocation((d) => {
-        if (d) gotLocation(d.latitude, d.longitude, d.horizontal_accuracy);
-        else if (!quiet || !loc) setLoc("bad", "loc_denied");
+        if (d) gotLocation(d.latitude, d.longitude, d.horizontal_accuracy, "telegram");
+        else { diag.loc = "telegram: no access"; showDiag(); if (!quiet || !loc) setLoc("bad", "loc_denied"); }
       });
     };
     if (lm.isInited) go(); else lm.init(go);
@@ -143,7 +152,11 @@
 
   // ------------------------------------------------------------------ camera
   async function startCamera() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return cameraFailed("cam_none");
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      diag.cam = "no getUserMedia";
+      showDiag();
+      return cameraFailed("cam_none");
+    }
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false });
@@ -151,7 +164,13 @@
       await video.play().catch(() => {});
       camMsg.hidden = true;
       shutter.hidden = false;
+      const tr = stream.getVideoTracks()[0];
+      const st = tr && tr.getSettings ? tr.getSettings() : null;
+      diag.cam = `live ${st && st.width ? st.width + "x" + st.height : ""}`;
+      showDiag();
     } catch (e) {
+      diag.cam = (e && e.name) || "error";
+      showDiag();
       cameraFailed(e && e.name === "NotAllowedError" ? "cam_denied" : "cam_none");
     }
   }

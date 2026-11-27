@@ -253,7 +253,8 @@ class LanternBot:
             elif cmd == "/status":
                 self.show_status(chat_id)
             else:
-                self.send(chat_id, t("help", self.lang(chat_id)))
+                self.send(chat_id, t("help_app" if self.webapp_url else "help", self.lang(chat_id)),
+                                          self.app_markup(chat_id))
             return
 
         if not chat.get("lang"):
